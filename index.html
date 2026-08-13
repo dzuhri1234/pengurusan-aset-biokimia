@@ -43,8 +43,8 @@
     <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; // Cth: https://xxxxx.supabase.co
-        const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
+        const SUPABASE_URL = "MASUKKAN_URL_ANDA_DI_SINI"; // Cth: https://xxxxx.supabase.co
+        const SUPABASE_ANON_KEY = "MASUKKAN_ANON_KEY_ANDA_DI_SINI";
 
         let supabaseClient;
         let statusChartInstance = null; // Pembolehubah global untuk carta
@@ -252,10 +252,10 @@
                         ${navLink('disposals', 'Pelupusan', 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16')}
                         
                         ${isAdmin() ? `
-                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-5 px-5">Sistem Admin</div>
-                            ${navLink('users', 'Pengguna', 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z')}
-                            ${navLink('setup_master', 'Data Rujukan', 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4')}
-                            ${navLink('audit_trail', 'Jejak Audit', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z')}
+                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-5 px-5">Laporan & Tetapan Admin</div>
+                            ${navLink('users', 'Pengurusan Pengguna', 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z')}
+                            ${navLink('setup_master', 'Data Induk (Rujukan)', 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4')}
+                            ${navLink('audit_trail', 'Jejak Audit Sistem', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z')}
                         ` : ''}
                     </div>
 
