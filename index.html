@@ -78,6 +78,9 @@
 
         const STATUS_OPTIONS = ["MASIH DIGUNAKAN", "ROSAK", "CADANG LUPUS", "DILUPUSKAN", "DIPINJAM", "DISELENGGARA"];
 
+        // Tambah pembolehubah global ini untuk menyimpan rekod carta
+        let statusChartInstance = null;
+
         // Utility Functions
         function showToast(msg, type = 'success') {
             const container = document.getElementById('toast-container');
@@ -515,13 +518,20 @@
             const ctx = document.getElementById('statusChart');
             if (!ctx) return;
 
+            // Padam carta lama jika wujud untuk elak 'infinite loop' dan pertindihan
+            if (statusChartInstance) {
+                statusChartInstance.destroy();
+            }
+
+            // Kira jumlah setiap status dari data aset
             const statusCounts = {};
-            STATE.data.assets.forEach(a => {
+            (STATE.data.assets || []).forEach(a => {
                 const s = a.status || 'TIDAK DIKETAHUI';
                 statusCounts[s] = (statusCounts[s] || 0) + 1;
             });
 
-            new Chart(ctx, {
+            // Simpan carta baharu ke dalam pembolehubah global
+            statusChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: Object.keys(statusCounts),
