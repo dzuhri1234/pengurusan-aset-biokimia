@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistem Pengurusan Aset Alih - Seksyen Biokimia VRI</title>
+    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Supabase Client -->
@@ -14,7 +15,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
     
     <script>
-        // Konfigurasi Tailwind Kustom
         tailwind.config = {
             theme: {
                 extend: {
@@ -36,6 +36,7 @@
         .nav-item { transition: all 0.2s ease; border-left: 3px solid transparent; }
         .nav-item:hover, .nav-item.active { background: rgba(255,255,255,0.08); border-left-color: #3b82f6; color: white; font-weight: 600; }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .chart-container { position: relative; height: 250px; width: 100%; }
     </style>
 </head>
 <body class="text-slate-800 h-screen flex overflow-hidden">
@@ -43,11 +44,12 @@
     <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; // Cth: https://xxxxx.supabase.co
-        const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
+        // PENTING: GANTIKAN DENGAN KUNCI SUPABASE ANDA SEBELUM DIJALANKAN
+        const SUPABASE_URL = "MASUKKAN_URL_ANDA_DI_SINI"; 
+        const SUPABASE_ANON_KEY = "MASUKKAN_ANON_KEY_ANDA_DI_SINI";
 
         let supabaseClient;
-        let statusChartInstance = null; // Pembolehubah global untuk carta
+        let statusChartInstance = null; 
 
         const STATE = {
             user: null,
@@ -73,8 +75,7 @@
             toast.className = `${bg} text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 transform translate-y-4 opacity-0`;
             toast.innerHTML = msg;
             container.appendChild(toast);
-            
-            setTimeout(() => { toast.classList.remove('translate-y-4', 'opacity-0'); }, 10);
+            setTimeout(() => toast.classList.remove('translate-y-4', 'opacity-0'), 10);
             setTimeout(() => {
                 toast.classList.add('opacity-0', '-translate-y-4');
                 setTimeout(() => toast.remove(), 300);
@@ -96,6 +97,8 @@
                 case 'DIPINJAM': return 'bg-blue-100 text-blue-800 border-blue-200';
                 case 'DISELENGGARA': return 'bg-purple-100 text-purple-800 border-purple-200';
                 case 'SELESAI': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                case 'BAIK': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                case 'AKTIF': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
                 default: return 'bg-gray-100 text-gray-800 border-gray-200';
             }
         }
@@ -117,16 +120,16 @@
         function getEntityName(collection, id) {
             if (!id) return '-';
             const item = STATE.data[collection]?.find(x => x.id === id);
-            return item ? (item.nama || item.name || id) : id;
+            return item ? (item.nama || item.name || item.registration_no || id) : id;
         }
 
         async function initApp() {
             if (!SUPABASE_URL || SUPABASE_URL.includes("MASUKKAN_URL")) {
                 document.getElementById('app').innerHTML = `
                     <div class="w-full h-full flex items-center justify-center bg-slate-900 text-white p-6">
-                        <div class="max-w-md text-center">
+                        <div class="max-w-md text-center bg-slate-800 p-8 rounded-xl shadow-2xl border border-red-500">
                             <h2 class="text-2xl font-bold text-red-400 mb-4">Sistem Belum Disambungkan</h2>
-                            <p class="text-slate-300">Sila masukkan <b>SUPABASE_URL</b> dan <b>SUPABASE_ANON_KEY</b> di dalam fail kod HTML anda.</p>
+                            <p class="text-slate-300">Sila masukkan <b>SUPABASE_URL</b> dan <b>SUPABASE_ANON_KEY</b> yang sah di dalam fail HTML.</p>
                         </div>
                     </div>`;
                 return;
@@ -157,11 +160,11 @@
 
         async function fetchAllData() {
             try {
-                const tables = ['assets', 'locations', 'categories', 'personnel', 'maintenance', 'damage', 'movements', 'disposals'];
-                const promises = tables.map(t => supabaseClient.from(t).select('*'));
+                const tables = ['assets', 'movements', 'maintenance', 'damage', 'disposals', 'inspections', 'locations', 'categories', 'personnel'];
+                const promises = tables.map(t => supabaseClient.from(t).select('*').order('created_at', { ascending: false }).catch(() => ({data:[]})));
                 const results = await Promise.all(promises);
 
-                tables.forEach((table, index) => { if (results[index].data) STATE.data[table] = results[index].data; });
+                tables.forEach((table, index) => { if (results[index] && results[index].data) STATE.data[table] = results[index].data; });
 
                 if (isAdmin()) {
                     const { data: audits } = await supabaseClient.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
@@ -170,14 +173,7 @@
                     const { data: users } = await supabaseClient.from('user_profiles').select('*').order('created_at', { ascending: false });
                     if (users) STATE.data.user_profiles = users;
                 }
-                
-                // Inspections fallback
-                try {
-                    const { data } = await supabaseClient.from('inspections').select('*');
-                    if (data) STATE.data.inspections = data;
-                } catch(e) { STATE.data.inspections = []; }
-
-            } catch (e) { showToast("Gagal memuat turun data pelayan.", "error"); console.error(e); }
+            } catch (e) { showToast("Ralat memuat turun beberapa data. Struktur jadual mungkin tidak lengkap.", "warning"); console.error(e); }
         }
 
         async function handleLogin(e) {
@@ -235,31 +231,40 @@
             root.innerHTML = `
                 <!-- Sidebar -->
                 <aside class="${STATE.sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed lg:relative z-40 w-64 h-full bg-navy-900 text-slate-300 flex flex-col transition-transform duration-300 lg:translate-x-0 shadow-xl">
-                    <div class="p-5 border-b border-white/10">
-                        <h2 class="text-white font-bold text-lg leading-tight">Biokimia VRI</h2>
-                        <p class="text-xs text-blue-400">Pengurusan Aset Pintar</p>
+                    <div class="p-5 border-b border-white/10 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-white font-bold text-lg leading-tight">Biokimia VRI</h2>
+                            <p class="text-[10px] text-blue-400 uppercase tracking-wider font-semibold">Pengurusan Aset Pintar</p>
+                        </div>
+                        <button onclick="STATE.sidebarOpen=false; renderApp()" class="lg:hidden text-slate-400 hover:text-white">&times;</button>
                     </div>
                     
-                    <div class="flex-1 overflow-y-auto py-4 flex flex-col gap-1 custom-scrollbar">
-                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-2 px-5">Utama</div>
+                    <div class="flex-1 overflow-y-auto py-4 flex flex-col gap-0.5 custom-scrollbar">
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-1 px-5">Utama</div>
                         ${navLink('dashboard', 'Papan Pemuka', 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6')}
-                        ${navLink('assets', 'Senarai Aset', 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4')}
+                        ${navLink('assets', 'Senarai Aset Penuh', 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4')}
                         
-                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-5 px-5">Operasi</div>
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Kitaran Hayat</div>
                         ${navLink('movements', 'Pergerakan & Pinjaman', 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4')}
-                        ${navLink('maintenance', 'Penyelenggaraan', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z')}
+                        ${navLink('maintenance', 'Penyelenggaraan (PM)', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z')}
                         ${navLink('damage', 'Laporan Kerosakan', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z')}
-                        ${navLink('disposals', 'Pelupusan', 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16')}
+                        ${navLink('inspections', 'Pemeriksaan Berkala', 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4')}
+                        ${navLink('disposals', 'Pelupusan (PEP)', 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16')}
                         
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Data Induk & Laporan</div>
+                        ${navLink('locations', 'Lokasi Penempatan', 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z')}
+                        ${navLink('categories', 'Kategori Aset', 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z')}
+                        ${navLink('personnel', 'Pemegang (PIC)', 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z')}
+                        ${navLink('reports', 'Jana Laporan CSV', 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z')}
+
                         ${isAdmin() ? `
-                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-5 px-5">Laporan & Tetapan Admin</div>
+                            <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Sistem Admin</div>
                             ${navLink('users', 'Pengurusan Pengguna', 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z')}
-                            ${navLink('setup_master', 'Data Induk (Rujukan)', 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4')}
                             ${navLink('audit_trail', 'Jejak Audit Sistem', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z')}
                         ` : ''}
                     </div>
 
-                    <div class="p-4 bg-navy-800 border-t border-white/10">
+                    <div class="p-4 bg-navy-800 border-t border-white/10 shrink-0">
                         <div class="flex items-center gap-3 mb-3">
                             <div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm">
                                 ${(STATE.profile?.name || STATE.user.email).substring(0,2).toUpperCase()}
@@ -269,7 +274,9 @@
                                 <p class="text-[10px] text-blue-300 font-bold tracking-wider">${STATE.profile?.role || 'USER'}</p>
                             </div>
                         </div>
-                        <button onclick="supabaseClient.auth.signOut()" class="w-full bg-white/10 hover:bg-red-500/80 text-white text-xs font-bold py-2 rounded transition-colors">Log Keluar</button>
+                        <button onclick="supabaseClient.auth.signOut()" class="w-full bg-white/10 hover:bg-red-500/80 text-white text-xs font-bold py-2 rounded transition-colors flex items-center justify-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg> Log Keluar
+                        </button>
                     </div>
                 </aside>
 
@@ -277,13 +284,13 @@
                 <div onclick="STATE.sidebarOpen=false; renderApp()" class="fixed inset-0 bg-slate-900/60 z-30 lg:hidden ${STATE.sidebarOpen ? 'block' : 'hidden'}"></div>
 
                 <!-- Main Content -->
-                <main class="flex-1 flex flex-col min-w-0 overflow-hidden">
-                    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 shadow-sm z-10">
+                <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+                    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 shadow-sm z-10 shrink-0">
                         <button onclick="STATE.sidebarOpen=true; renderApp()" class="lg:hidden text-slate-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
                         <h1 class="text-lg font-bold text-slate-800">${getViewTitle()}</h1>
                         <div class="ml-auto flex items-center gap-2">
-                            <span class="inline-flex items-center gap-1.5 text-xs font-medium bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Bersambung
+                            <span class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Pangkalan Data Terhubung
                             </span>
                         </div>
                     </header>
@@ -305,13 +312,13 @@
             const isActive = STATE.view === key;
             return `
                 <button onclick="STATE.view='${key}'; STATE.sidebarOpen=false; renderApp()" class="nav-item ${isActive ? 'active' : ''} w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left">
-                    <svg class="w-4 h-4 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${svgPath}"></path></svg>
-                    ${label}
+                    <svg class="w-4 h-4 opacity-70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${svgPath}"></path></svg>
+                    <span class="truncate">${label}</span>
                 </button>`;
         }
 
         function getViewTitle() {
-            const t = { dashboard: 'Papan Pemuka', assets: 'Senarai Aset Penuh', movements: 'Pergerakan & Pinjaman', maintenance: 'Penyelenggaraan Aset', damage: 'Laporan Kerosakan', disposals: 'Pelupusan Aset', users: 'Pengurusan Sistem & Pengguna', setup_master: 'Data Rujukan Induk', audit_trail: 'Jejak Audit Pangkalan Data' };
+            const t = { dashboard: 'Papan Pemuka', assets: 'Senarai Aset Penuh', movements: 'Pergerakan & Pinjaman', maintenance: 'Penyelenggaraan Aset', damage: 'Laporan Kerosakan', inspections: 'Pemeriksaan Berkala', disposals: 'Pelupusan Aset', locations: 'Lokasi Penempatan', categories: 'Kategori Aset', personnel: 'Pemegang Aset (PIC)', reports: 'Pusat Laporan & Eksport CSV', users: 'Pengurusan Pengguna', audit_trail: 'Jejak Audit Pangkalan Data' };
             return t[STATE.view] || 'Sistem Aset';
         }
 
@@ -319,14 +326,64 @@
             switch(STATE.view) {
                 case 'dashboard': return renderDashboard();
                 case 'assets': return renderAssets();
+                case 'locations': return renderSimpleTable('locations', 'Lokasi Penempatan', ['name', 'code']);
+                case 'categories': return renderSimpleTable('categories', 'Kategori Aset', ['name']);
+                case 'personnel': return renderSimpleTable('personnel', 'Pemegang Aset', ['name', 'position', 'department']);
+                case 'reports': return renderReports();
                 case 'users': return renderUsers();
-                case 'setup_master': return renderSetupMaster();
                 case 'audit_trail': return renderAuditTrail();
-                case 'movements': return renderGenericTable({ collection: 'movements', formModal: 'movementForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Lokasi Baru', render: r => escapeHTML(r.new_location) }, { header: 'Tarikh Keluar', render: r => formatDate(r.out_date) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
-                case 'maintenance': return renderGenericTable({ collection: 'maintenance', formModal: 'maintenanceForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Tarikh Mula', render: r => formatDate(r.start_date) }, { header: 'Kos (RM)', render: r => parseFloat(r.cost||0).toFixed(2) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
-                case 'damage': return renderGenericTable({ collection: 'damage', formModal: 'damageForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Kerosakan', render: r => escapeHTML(r.damage_type) }, { header: 'Tarikh Lapor', render: r => formatDate(r.report_date) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
-                case 'disposals': return renderGenericTable({ collection: 'disposals', formModal: 'disposalForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Kaedah', render: r => escapeHTML(r.method) }, { header: 'Tarikh', render: r => formatDate(r.proposal_date) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
-                default: return `<div class="p-8 text-center text-slate-500">Pembangunan dalam proses.</div>`;
+                
+                case 'movements': return renderTransactionTable({ 
+                    title: 'Pergerakan & Pinjaman', collection: 'movements', formModal: 'movementForm', 
+                    columns: [ 
+                        { header: 'Aset Terlibat', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, 
+                        { header: 'Tujuan', render: r => escapeHTML(r.purpose) }, 
+                        { header: 'Lokasi Baru', render: r => escapeHTML(r.new_location) }, 
+                        { header: 'Tarikh Keluar', render: r => formatDate(r.out_date) }, 
+                        { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } 
+                    ] 
+                });
+                case 'maintenance': return renderTransactionTable({ 
+                    title: 'Rekod Penyelenggaraan', collection: 'maintenance', formModal: 'maintenanceForm', 
+                    columns: [ 
+                        { header: 'Aset Terlibat', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, 
+                        { header: 'Jenis Selenggara', render: r => escapeHTML(r.type) },
+                        { header: 'Tarikh Mula', render: r => formatDate(r.start_date) }, 
+                        { header: 'Kos (RM)', render: r => parseFloat(r.cost||0).toFixed(2) }, 
+                        { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } 
+                    ] 
+                });
+                case 'damage': return renderTransactionTable({ 
+                    title: 'Laporan Kerosakan', collection: 'damage', formModal: 'damageForm', 
+                    columns: [ 
+                        { header: 'Aset Terlibat', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, 
+                        { header: 'Kerosakan', render: r => escapeHTML(r.damage_type) }, 
+                        { header: 'Tarikh Lapor', render: r => formatDate(r.report_date) }, 
+                        { header: 'Keutamaan', render: r => escapeHTML(r.priority) }, 
+                        { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } 
+                    ] 
+                });
+                case 'inspections': return renderTransactionTable({ 
+                    title: 'Pemeriksaan Berkala', collection: 'inspections', formModal: 'inspectionForm', 
+                    columns: [ 
+                        { header: 'Aset Terlibat', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, 
+                        { header: 'Tarikh Semakan', render: r => formatDate(r.inspection_date) }, 
+                        { header: 'Pemeriksa', render: r => escapeHTML(r.inspector_name || '-') }, 
+                        { header: 'Keadaan Aset', render: r => escapeHTML(r.condition) }, 
+                        { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } 
+                    ] 
+                });
+                case 'disposals': return renderTransactionTable({ 
+                    title: 'Cadangan Pelupusan', collection: 'disposals', formModal: 'disposalForm', 
+                    columns: [ 
+                        { header: 'Aset Terlibat', render: r => `<span class="font-medium text-slate-900">${getEntityName('assets', r.asset_id)}</span>` }, 
+                        { header: 'Sebab', render: r => escapeHTML(r.reason) }, 
+                        { header: 'Tarikh Cadangan', render: r => formatDate(r.proposal_date) }, 
+                        { header: 'Kaedah', render: r => escapeHTML(r.method) }, 
+                        { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } 
+                    ] 
+                });
+                default: return `<div class="p-8 text-center text-slate-500 bg-white rounded-xl shadow-sm border border-slate-200">Modul sedang dimuatkan atau tidak wujud.</div>`;
             }
         }
 
@@ -334,27 +391,62 @@
             const assets = STATE.data.assets.filter(a => !a.is_deleted) || [];
             const activeCount = assets.filter(a => a.status === 'MASIH DIGUNAKAN').length;
             const brokenCount = assets.filter(a => a.status?.includes('ROSAK')).length;
+            const dipinjamCount = assets.filter(a => a.status === 'DIPINJAM').length;
             
             return `
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-blue-50 text-primary flex items-center justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4"></path></svg></div>
-                        <div><p class="text-2xl font-bold text-slate-800">${assets.length}</p><p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Jumlah Keseluruhan Aset</p></div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-center">
+                        <div class="flex justify-between items-start">
+                            <div><p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Jumlah Aset</p><p class="text-3xl font-bold text-slate-800">${assets.length}</p></div>
+                            <div class="p-2 bg-blue-50 text-primary rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg></div>
+                        </div>
                     </div>
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
-                        <div><p class="text-2xl font-bold text-slate-800">${activeCount}</p><p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Aktif Digunakan</p></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-5 flex flex-col justify-center bg-emerald-50/30">
+                        <div class="flex justify-between items-start">
+                            <div><p class="text-xs font-bold text-emerald-600 uppercase tracking-wide mb-1">Aktif Digunakan</p><p class="text-3xl font-bold text-emerald-700">${activeCount}</p></div>
+                            <div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
+                        </div>
                     </div>
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex items-center gap-4">
-                        <div class="w-12 h-12 rounded-full bg-red-50 text-red-600 flex items-center justify-center"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div>
-                        <div><p class="text-2xl font-bold text-slate-800">${brokenCount}</p><p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">Aset Rosak/Aduan</p></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-red-200 p-5 flex flex-col justify-center bg-red-50/30">
+                        <div class="flex justify-between items-start">
+                            <div><p class="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">Rosak / Aduan</p><p class="text-3xl font-bold text-red-700">${brokenCount}</p></div>
+                            <div class="p-2 bg-red-100 text-red-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-5 flex flex-col justify-center bg-blue-50/30">
+                        <div class="flex justify-between items-start">
+                            <div><p class="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">Sedang Dipinjam</p><p class="text-3xl font-bold text-blue-700">${dipinjamCount}</p></div>
+                            <div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 w-full md:w-1/2">
-                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide mb-4">Pecahan Status Aset</h3>
-                    <div class="relative w-full h-64">
-                        <canvas id="statusChart"></canvas>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5">
+                        <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide mb-4">Status Aset Keseluruhan</h3>
+                        <div class="chart-container">
+                            <!-- Canvas di dalam div relative dengan height tetap untuk elak ralat infinite loop -->
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                        <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                            <h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Jejak Audit Terkini</h3>
+                            <button onclick="STATE.view='audit_trail'; renderApp()" class="text-xs text-primary hover:underline">Lihat Semua</button>
+                        </div>
+                        <div class="p-0 flex-1 overflow-y-auto max-h-[250px] custom-scrollbar">
+                            <ul class="divide-y divide-slate-100">
+                                ${(STATE.data.audit_logs || []).slice(0,5).map(log => `
+                                    <li class="p-3 hover:bg-slate-50 flex items-start gap-3">
+                                        <div class="mt-0.5"><span class="w-2 h-2 rounded-full inline-block ${log.action==='DELETE'?'bg-red-500':(log.action==='UPDATE'?'bg-orange-400':'bg-emerald-500')}"></span></div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-sm text-slate-800 font-medium truncate">${escapeHTML(log.user_email)} <span class="text-slate-500 font-normal">melakukan</span> ${escapeHTML(log.action)} <span class="text-slate-500 font-normal">pada</span> ${escapeHTML(log.table_name)}</p>
+                                            <p class="text-xs text-slate-400 mt-0.5">${formatDate(log.created_at)}</p>
+                                        </div>
+                                    </li>
+                                `).join('') || `<li class="p-4 text-center text-sm text-slate-500">Tiada aktiviti dikesan.</li>`}
+                            </ul>
+                        </div>
                     </div>
                 </div>
             `;
@@ -364,8 +456,8 @@
             const ctx = document.getElementById('statusChart');
             if (!ctx) return;
 
-            // Padam carta lama jika wujud untuk elak 'infinite loop'
-            if (statusChartInstance) statusChartInstance.destroy();
+            // PADAM CARTA LAMA SEBELUM LUKIS BARU UNTUK MENGELAK GELUNG TANPA HENTI
+            if (statusChartInstance) { statusChartInstance.destroy(); }
 
             const statusCounts = {};
             STATE.data.assets.filter(a => !a.is_deleted).forEach(a => {
@@ -373,7 +465,6 @@
                 statusCounts[s] = (statusCounts[s] || 0) + 1;
             });
 
-            // Pastikan maintainAspectRatio: false wujud
             statusChartInstance = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
@@ -386,8 +477,8 @@
                 },
                 options: {
                     responsive: true,
-                    maintainAspectRatio: false,
-                    cutout: '65%',
+                    maintainAspectRatio: false, // Penting untuk elak loop
+                    cutout: '70%',
                     plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { family: 'Inter', size: 11 } } } }
                 }
             });
@@ -395,7 +486,12 @@
 
         function renderAssets() {
             let filtered = STATE.data.assets.filter(a => !a.is_deleted).filter(a => {
-                const matchSearch = !STATE.filters.search || (a.name?.toLowerCase().includes(STATE.filters.search.toLowerCase()) || a.registration_no?.toLowerCase().includes(STATE.filters.search.toLowerCase()));
+                const searchStr = STATE.filters.search.toLowerCase();
+                const matchSearch = !searchStr || (
+                    (a.name || '').toLowerCase().includes(searchStr) || 
+                    (a.registration_no || '').toLowerCase().includes(searchStr) ||
+                    (a.location || '').toLowerCase().includes(searchStr)
+                );
                 const matchStatus = !STATE.filters.status || a.status === STATE.filters.status;
                 return matchSearch && matchStatus;
             });
@@ -404,32 +500,37 @@
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
                     <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50/50 rounded-t-xl">
                         <div class="flex flex-1 w-full gap-2">
-                            <input type="text" placeholder="Cari nama atau no. siri..." value="${escapeHTML(STATE.filters.search)}" oninput="STATE.filters.search=this.value; renderApp();" class="flex-1 max-w-sm px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+                            <div class="relative flex-1 max-w-md">
+                                <svg class="w-4 h-4 absolute left-3 top-2.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                <input type="text" placeholder="Cari nama, lokasi atau no. siri..." value="${escapeHTML(STATE.filters.search)}" oninput="STATE.filters.search=this.value; renderApp(); document.querySelector('input[placeholder]').focus();" class="w-full pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+                            </div>
                             <select onchange="STATE.filters.status=this.value; renderApp();" class="py-2 px-3 text-sm border border-slate-300 rounded-lg outline-none bg-white">
                                 <option value="">Semua Status</option>
                                 ${STATUS_OPTIONS.map(s => `<option value="${s}" ${STATE.filters.status === s ? 'selected' : ''}>${s}</option>`).join('')}
                             </select>
                         </div>
-                        ${isAdmin() ? `<button onclick="STATE.modal={type:'assetForm'}; renderApp();" class="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm">+ Daftar Aset</button>` : ''}
+                        ${isAdmin() ? `<button onclick="STATE.modal={type:'assetForm', id:null}; renderApp();" class="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors whitespace-nowrap">+ Daftar Aset</button>` : ''}
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
                             <thead>
                                 <tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                                    <th class="p-4 pl-6">No. Siri</th><th class="p-4">Maklumat Aset</th><th class="p-4">Status</th><th class="p-4 text-right pr-6">Tindakan</th>
+                                    <th class="p-4 pl-6">No. Pendaftaran</th><th class="p-4">Keterangan Aset</th><th class="p-4">Lokasi</th><th class="p-4">Status</th><th class="p-4 text-right pr-6">Tindakan</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-100">
                                 ${filtered.length > 0 ? filtered.map(a => `
-                                    <tr class="hover:bg-slate-50/70 group">
+                                    <tr class="hover:bg-slate-50/70 group transition-colors">
                                         <td class="p-4 pl-6 text-sm font-mono font-medium text-slate-800">${escapeHTML(a.registration_no || a.id)}</td>
                                         <td class="p-4"><p class="text-sm font-semibold text-slate-800 line-clamp-1">${escapeHTML(a.name)}</p><p class="text-xs text-slate-500 mt-0.5">${escapeHTML(a.category || '-')}</p></td>
+                                        <td class="p-4 text-sm text-slate-600">${escapeHTML(a.location || '-')}</td>
                                         <td class="p-4"><span class="px-2.5 py-1 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)} whitespace-nowrap">${escapeHTML(a.status)}</span></td>
-                                        <td class="p-4 pr-6 text-right">
+                                        <td class="p-4 pr-6 text-right space-x-2">
                                             <button onclick="STATE.modal={type:'assetProfile', id:'${a.id}'}; renderApp();" class="text-xs font-semibold text-primary hover:underline">Profil</button>
+                                            ${isAdmin() ? `<button onclick="STATE.modal={type:'assetForm', id:'${a.id}'}; renderApp();" class="text-xs font-semibold text-slate-500 hover:text-slate-800">Edit</button>` : ''}
                                         </td>
                                     </tr>
-                                `).join('') : `<tr><td colspan="4" class="p-8 text-center text-slate-500 text-sm">Tiada aset dijumpai.</td></tr>`}
+                                `).join('') : `<tr><td colspan="5" class="p-8 text-center text-slate-500 text-sm">Tiada aset dijumpai.</td></tr>`}
                             </tbody>
                         </table>
                     </div>
@@ -437,22 +538,129 @@
             `;
         }
 
-        function renderUsers() {
-            if(!isAdmin()) return '<div class="p-4 text-red-500">Akses ditolak.</div>';
+        function renderSimpleTable(collection, title, fields) {
+            const data = STATE.data[collection] || [];
             return `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
                     <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
-                        <h2 class="font-bold text-slate-800">Senarai Pengguna Sistem</h2>
+                        <h2 class="font-bold text-slate-800">${title}</h2>
+                        ${isAdmin() ? `<button onclick="STATE.modal={type:'simpleForm', collection:'${collection}'}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm">+ Rekod Baru</button>` : ''}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                                ${fields.map(f => `<th class="p-4">${f.toUpperCase()}</th>`).join('')}
+                                ${isAdmin() ? `<th class="p-4 text-right">Tindakan</th>` : ''}
+                            </tr></thead>
+                            <tbody class="divide-y divide-slate-100">
+                                ${data.length ? data.map(row => `
+                                    <tr class="hover:bg-slate-50">
+                                        ${fields.map(f => `<td class="p-4 text-sm text-slate-700">${escapeHTML(row[f]) || '-'}</td>`).join('')}
+                                        ${isAdmin() ? `<td class="p-4 text-right"><button onclick="deleteRecord('${collection}', '${row.id}')" class="text-xs text-red-500 hover:underline">Padam</button></td>` : ''}
+                                    </tr>`).join('') : `<tr><td colspan="${fields.length + 1}" class="p-8 text-center text-slate-500 text-sm">Tiada rekod.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTransactionTable(config) {
+            const data = STATE.data[config.collection] || [];
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
+                        <h2 class="font-bold text-slate-800">${config.title}</h2>
+                        ${isAdmin() ? `<button onclick="STATE.modal={type:'${config.formModal}', id:null}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm">+ Rekod Baru</button>` : ''}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">${config.columns.map(c => `<th class="p-4">${c.header}</th>`).join('')}</tr></thead>
+                            <tbody class="divide-y divide-slate-100">
+                                ${data.length ? data.map(row => `<tr class="hover:bg-slate-50">${config.columns.map(c => `<td class="p-4 text-sm text-slate-700">${c.render(row)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${config.columns.length}" class="p-8 text-center text-slate-500 text-sm">Tiada rekod dijumpai.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderReports() {
+            const reports = [
+                { id: 'assets', name: 'Senarai Penuh Aset Terkini' },
+                { id: 'movements', name: 'Laporan Pergerakan & Pinjaman Aset' },
+                { id: 'maintenance', name: 'Laporan Penyelenggaraan Aset' },
+                { id: 'damage', name: 'Laporan Kerosakan & Pembaikan' },
+                { id: 'inspections', name: 'Laporan Pemeriksaan Berkala' },
+                { id: 'disposals', name: 'Laporan Pelupusan Aset (PEP)' }
+            ];
+            
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h2 class="font-bold text-lg text-slate-800 mb-2">Pusat Laporan & Eksport Data</h2>
+                    <p class="text-sm text-slate-500 mb-6">Muat turun data pangkalan data terus ke dalam format CSV untuk dibuka di Microsoft Excel.</p>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        ${reports.map(r => `
+                            <div class="border border-slate-200 rounded-lg p-4 flex items-center justify-between hover:border-primary transition-colors">
+                                <div class="flex items-center gap-3">
+                                    <div class="p-2 bg-blue-50 text-primary rounded-md"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+                                    <p class="font-semibold text-sm text-slate-700">${r.name}</p>
+                                </div>
+                                <button onclick="downloadCSV('${r.id}')" class="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 py-1.5 px-4 rounded font-medium transition-colors">Muat Turun</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        function downloadCSV(collection) {
+            const data = STATE.data[collection];
+            if (!data || data.length === 0) { showToast("Tiada data untuk dieksport.", "warning"); return; }
+            
+            const keys = Object.keys(data[0]).filter(k => k !== 'id' && !k.endsWith('_id')); // Hide internal IDs slightly for clean export
+            let csv = keys.join(',') + '\n';
+            
+            data.forEach(row => {
+                csv += keys.map(k => {
+                    let val = row[k] === null ? '' : String(row[k]);
+                    val = val.replace(/"/g, '""'); // escape quotes
+                    return `"${val}"`;
+                }).join(',') + '\n';
+            });
+            
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Laporan_${collection}_${new Date().getTime()}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("Laporan CSV berjaya dimuat turun.");
+        }
+
+        function renderUsers() {
+            if(!isAdmin()) return '<div class="p-4 text-red-500 font-bold bg-red-50 border border-red-200 rounded-lg">Akses ditolak: Ruangan Pentadbir Sahaja.</div>';
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
+                        <div>
+                            <h2 class="font-bold text-slate-800">Senarai Pengguna Sistem</h2>
+                            <p class="text-xs text-slate-500">Kawal siapa yang boleh mengakses sistem.</p>
+                        </div>
                         <button onclick="STATE.modal={type:'userForm'}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm">+ Tambah Pengguna</button>
                     </div>
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
-                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Nama</th><th class="p-4">E-mel</th><th class="p-4">Peranan</th><th class="p-4">Tarikh Daftar</th></tr></thead>
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Nama</th><th class="p-4">E-mel Log Masuk</th><th class="p-4">Peranan</th><th class="p-4">Tarikh Daftar</th></tr></thead>
                             <tbody class="divide-y divide-slate-100">
-                                ${STATE.data.user_profiles.map(u => `
+                                ${(STATE.data.user_profiles || []).map(u => `
                                     <tr class="hover:bg-slate-50">
                                         <td class="p-4 text-sm font-medium text-slate-800">${escapeHTML(u.name || '-')}</td>
-                                        <td class="p-4 text-sm text-slate-600">${escapeHTML(u.email)}</td>
+                                        <td class="p-4 text-sm font-mono text-slate-600">${escapeHTML(u.email)}</td>
                                         <td class="p-4"><span class="px-2 py-1 text-[10px] font-bold rounded-md ${u.role==='ADMIN'?'bg-primary text-white':'bg-slate-200 text-slate-700'}">${escapeHTML(u.role)}</span></td>
                                         <td class="p-4 text-sm text-slate-500">${formatDate(u.created_at)}</td>
                                     </tr>`).join('')}
@@ -462,37 +670,16 @@
                 </div>
             `;
         }
-
-        function renderGenericTable(config) {
-            const data = STATE.data[config.collection] || [];
-            return `
-                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
-                    <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl">
-                        <h2 class="font-bold text-slate-800">Senarai Rekod</h2>
-                        ${isAdmin() ? `<button onclick="STATE.modal={type:'${config.formModal}'}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm">+ Tambah Rekod</button>` : ''}
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">${config.columns.map(c => `<th class="p-4">${c.header}</th>`).join('')}</tr></thead>
-                            <tbody class="divide-y divide-slate-100">
-                                ${data.length ? data.map(row => `<tr class="hover:bg-slate-50">${config.columns.map(c => `<td class="p-4 text-sm text-slate-700">${c.render(row)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${config.columns.length}" class="p-8 text-center text-slate-500 text-sm">Tiada rekod.</td></tr>`}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
-        }
-        
-        function renderSetupMaster() { return '<div class="p-8 text-center text-slate-500 bg-white rounded-xl border border-slate-200">Pengurusan data induk. (Pembangunan berterusan)</div>'; }
         
         function renderAuditTrail() {
+            if(!isAdmin()) return '<div class="p-4 text-red-500 font-bold">Akses ditolak.</div>';
             return `
                 <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
                     <div class="overflow-x-auto">
                         <table class="w-full text-left border-collapse">
-                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Tarikh</th><th class="p-4">Pengguna</th><th class="p-4">Tindakan</th><th class="p-4">Jadual</th></tr></thead>
-                            <tbody class="divide-y divide-slate-100 text-sm font-mono">
-                                ${STATE.data.audit_logs.map(log => `<tr class="hover:bg-slate-50"><td class="p-4 text-slate-500">${formatDate(log.created_at)}</td><td class="p-4 text-slate-800">${escapeHTML(log.user_email)}</td><td class="p-4 font-bold ${log.action === 'DELETE' ? 'text-red-600' : 'text-primary'}">${escapeHTML(log.action)}</td><td class="p-4 text-slate-600">${escapeHTML(log.table_name)}</td></tr>`).join('')}
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Masa (UTC)</th><th class="p-4">Pengguna</th><th class="p-4">Tindakan</th><th class="p-4">Koleksi</th></tr></thead>
+                            <tbody class="divide-y divide-slate-100 text-sm">
+                                ${(STATE.data.audit_logs || []).map(log => `<tr class="hover:bg-slate-50"><td class="p-4 text-slate-500 text-xs font-mono">${log.created_at.replace('T',' ').substring(0,19)}</td><td class="p-4 text-slate-800 font-medium">${escapeHTML(log.user_email)}</td><td class="p-4 font-bold ${log.action === 'DELETE' || log.action === 'SOFT_DELETE' ? 'text-red-600' : 'text-primary'}">${escapeHTML(log.action)}</td><td class="p-4 text-slate-600 font-mono">${escapeHTML(log.table_name)}</td></tr>`).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -505,16 +692,21 @@
             let content = ''; let title = '';
             
             if (m.type === 'assetProfile') { title = 'Profil Aset Lengkap'; content = modalAssetProfile(m.id); }
-            else if (m.type === 'assetForm') { title = m.id ? 'Kemaskini Aset' : 'Daftar Aset Baru'; content = modalAssetForm(m.id); }
-            else if (m.type === 'userForm') { title = 'Tambah Pengguna Baru'; content = modalUserForm(); }
-            else if (['maintenanceForm', 'damageForm', 'movementForm', 'disposalForm'].includes(m.type)) { title = 'Borang Transaksi'; content = modalLifecycleForm(m.type, m.id); }
+            else if (m.type === 'assetForm') { title = m.id ? 'Kemaskini Maklumat Aset' : 'Pendaftaran Aset Baharu'; content = modalAssetForm(m.id); }
+            else if (m.type === 'userForm') { title = 'Pendaftaran Pengguna Sistem'; content = modalUserForm(); }
+            else if (m.type === 'simpleForm') { title = 'Borang Data Induk'; content = modalSimpleForm(m.collection); }
+            else if (m.type === 'movementForm') { title = 'Borang Pergerakan / Pinjaman'; content = modalMovementForm(); }
+            else if (m.type === 'maintenanceForm') { title = 'Borang Penyelenggaraan Aset'; content = modalMaintenanceForm(); }
+            else if (m.type === 'damageForm') { title = 'Borang Laporan Kerosakan'; content = modalDamageForm(); }
+            else if (m.type === 'inspectionForm') { title = 'Borang Semakan Berkala'; content = modalInspectionForm(); }
+            else if (m.type === 'disposalForm') { title = 'Borang Cadangan Pelupusan'; content = modalDisposalForm(); }
 
             return `
-                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm" onclick="if(event.target === this){ STATE.modal=null; renderApp(); }">
-                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-                        <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm transition-opacity" onclick="if(event.target === this){ STATE.modal=null; renderApp(); }">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-[pulse_0.1s_ease-out]">
+                        <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
                             <h2 class="text-lg font-bold text-slate-800">${title}</h2>
-                            <button onclick="STATE.modal=null; renderApp();" class="text-slate-400 hover:text-slate-700 bg-white rounded-full p-1"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                            <button onclick="STATE.modal=null; renderApp();" class="text-slate-400 hover:text-slate-700 bg-slate-200/50 hover:bg-slate-200 rounded-full p-1.5 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
                         </div>
                         <div class="p-6 overflow-y-auto custom-scrollbar flex-1">${content}</div>
                     </div>
@@ -524,45 +716,318 @@
 
         function modalAssetProfile(id) {
             const a = STATE.data.assets.find(x => x.id === id);
+            if(!a) return '<p>Aset tidak dijumpai.</p>';
+            
             return `
-                <div class="flex gap-8">
-                    <div class="flex-1 space-y-4">
-                        <h1 class="text-xl font-bold text-slate-900">${escapeHTML(a.name)}</h1>
-                        <p class="text-sm font-mono text-slate-500">${escapeHTML(a.registration_no || a.id)}</p>
-                        <div class="grid grid-cols-2 gap-4 mt-4 text-sm">
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase">Kategori</p><p class="font-medium text-slate-800">${escapeHTML(a.category || '-')}</p></div>
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase">Lokasi</p><p class="font-medium text-slate-800">${escapeHTML(a.location || '-')}</p></div>
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase">Status</p><span class="px-2 py-0.5 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)}">${escapeHTML(a.status)}</span></div>
+                <div class="flex flex-col sm:flex-row gap-8">
+                    <div class="flex-1 space-y-5">
+                        <div>
+                            <h1 class="text-xl font-bold text-slate-900 mb-1">${escapeHTML(a.name)}</h1>
+                            <p class="text-sm font-mono font-bold text-primary bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100">${escapeHTML(a.registration_no || a.id)}</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-100">
+                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Kategori</p><p class="font-medium text-slate-800">${escapeHTML(a.category || '-')}</p></div>
+                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Lokasi Tepat</p><p class="font-medium text-slate-800">${escapeHTML(a.location || '-')}</p></div>
+                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Status Terkini</p><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)}">${escapeHTML(a.status)}</span></div>
+                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Tarikh Semakan Akhir</p><p class="font-medium text-slate-800">${formatDate(a.last_inspection_date) || '-'}</p></div>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Catatan Tambahan</p>
+                            <p class="text-sm text-slate-700 bg-white border border-slate-200 p-3 rounded-lg min-h-[60px] whitespace-pre-wrap">${escapeHTML(a.notes || 'Tiada catatan rekod.')}</p>
                         </div>
                     </div>
-                    <div class="w-48 flex-shrink-0 flex flex-col items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                        <canvas id="qrCanvas" class="w-32 h-32 bg-white rounded-lg p-2"></canvas>
-                        <p class="text-[10px] text-slate-500 font-bold mt-2 uppercase">Kod QR Sistem</p>
+                    <div class="sm:w-56 flex-shrink-0 flex flex-col items-center bg-white p-5 rounded-2xl border border-slate-200 shadow-sm h-fit">
+                        <canvas id="qrCanvas" class="w-40 h-40 bg-white"></canvas>
+                        <p class="text-xs text-slate-500 font-bold mt-3 uppercase tracking-widest text-center">Imbas Kod Aset<br>(Sedia untuk dicetak)</p>
                     </div>
                 </div>
-                ${isAdmin() ? `<div class="mt-6 pt-4 border-t border-slate-200 flex justify-end gap-3"><button onclick="deleteRecord('assets', '${a.id}')" class="px-4 py-2 rounded-lg font-medium text-sm text-red-600 border border-red-200 hover:bg-red-50">Lupus / Padam</button></div>` : ''}
+                ${isAdmin() ? `<div class="mt-8 pt-4 border-t border-slate-200 flex justify-end gap-3"><button onclick="deleteRecord('assets', '${a.id}')" class="px-5 py-2 rounded-lg font-bold text-sm text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">Tandakan Sebagai Lupus / Padam</button></div>` : ''}
             `;
         }
 
         function generateQRCode() {
             const canvas = document.getElementById('qrCanvas');
-            if (canvas && STATE.modal.type === 'assetProfile') {
-                new QRious({ element: canvas, value: `https://vri-biokimia.web.app/?asset=${STATE.modal.id}`, size: 150, level: 'H' });
+            if (canvas && STATE.modal && STATE.modal.type === 'assetProfile') {
+                new QRious({ element: canvas, value: `https://aset.vri.gov.my/asset/${STATE.modal.id}`, size: 180, level: 'H' });
+            }
+        }
+
+        function getSelectOptions(collection, selectedValue, valKey = 'name', displayKey = 'name') {
+            const data = STATE.data[collection] || [];
+            return data.map(item => `<option value="${escapeHTML(item[valKey])}" ${selectedValue === item[valKey] ? 'selected' : ''}>${escapeHTML(item[displayKey])}</option>`).join('');
+        }
+
+        function modalAssetForm(id) {
+            const a = id ? STATE.data.assets.find(x => x.id === id) : {};
+            return `
+                <form onsubmit="saveAssetForm(event, '${id || ''}')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Keterangan / Nama Aset <span class="text-red-500">*</span></label><input type="text" id="a_name" value="${escapeHTML(a.name)}" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"></div>
+                        
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">No. Pendaftaran Rasmi <span class="text-red-500">*</span></label><input type="text" id="a_reg" value="${escapeHTML(a.registration_no)}" required placeholder="Cth: MOA/JPV/VRI/..." class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"></div>
+                        
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Status Penggunaan <span class="text-red-500">*</span></label>
+                            <select id="a_status" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-primary outline-none">
+                                ${STATUS_OPTIONS.map(s => `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </div>
+
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kategori Klasifikasi</label>
+                            <select id="a_cat" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-primary outline-none">
+                                <option value="">-- Pilih --</option>
+                                ${getSelectOptions('categories', a.category)}
+                            </select>
+                        </div>
+                        
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Lokasi Penempatan Semasa</label>
+                            <select id="a_loc" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-primary outline-none">
+                                <option value="">-- Pilih --</option>
+                                ${getSelectOptions('locations', a.location)}
+                            </select>
+                        </div>
+
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Catatan Tambahan</label><textarea id="a_notes" rows="3" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">${escapeHTML(a.notes)}</textarea></div>
+                    </div>
+                    <div class="pt-4 border-t border-slate-100 flex justify-end gap-3"><button type="submit" id="saveAssetBtn" class="px-6 py-2.5 bg-primary hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Simpan Rekod Aset</button></div>
+                </form>
+            `;
+        }
+
+        async function saveAssetForm(e, id) {
+            e.preventDefault();
+            if(!checkAdminAction()) return;
+            const btn = document.getElementById('saveAssetBtn');
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 mx-auto"></div>`; btn.disabled = true;
+
+            const payload = {
+                name: document.getElementById('a_name').value.trim(),
+                registration_no: document.getElementById('a_reg').value.trim(),
+                status: document.getElementById('a_status').value,
+                category: document.getElementById('a_cat').value,
+                location: document.getElementById('a_loc').value,
+                notes: document.getElementById('a_notes').value.trim()
+            };
+
+            try {
+                if (id) {
+                    const { error } = await supabaseClient.from('assets').update(payload).eq('id', id);
+                    if (error) throw error;
+                    showToast("Maklumat aset berjaya dikemaskini.");
+                } else {
+                    const { error } = await supabaseClient.from('assets').insert([payload]);
+                    if (error) throw error;
+                    showToast("Aset baharu berjaya didaftarkan.");
+                }
+                await fetchAllData();
+                STATE.modal = null; renderApp();
+            } catch (err) {
+                showToast(err.message, "error");
+                btn.innerHTML = `Simpan Rekod Aset`; btn.disabled = false;
+            }
+        }
+
+        function getAssetSelectOptions() {
+            return STATE.data.assets.filter(a => !a.is_deleted).map(a => `<option value="${a.id}">${escapeHTML(a.registration_no || a.id)} - ${escapeHTML(a.name).substring(0,40)}...</option>`).join('');
+        }
+
+        function modalSimpleForm(collection) {
+            let fieldsHtml = '';
+            if (collection === 'categories') fieldsHtml = `<div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Nama Kategori <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>`;
+            if (collection === 'locations') fieldsHtml = `<div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Nama Lokasi <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none mb-3"></div><div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kod Bilik/Bangunan</label><input type="text" id="s_code" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>`;
+            if (collection === 'personnel') fieldsHtml = `<div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Nama Pegawai <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none mb-3"></div><div class="grid grid-cols-2 gap-3"><div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Jawatan</label><input type="text" id="s_pos" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div><div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Bahagian/Seksyen</label><input type="text" id="s_dept" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div></div>`;
+
+            return `
+                <form onsubmit="saveSimpleRecord(event, '${collection}')" class="space-y-4">
+                    ${fieldsHtml}
+                    <div class="pt-4 flex justify-end"><button type="submit" id="saveSimpleBtn" class="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-bold shadow-sm">Simpan Rekod</button></div>
+                </form>
+            `;
+        }
+
+        async function saveSimpleRecord(e, collection) {
+            e.preventDefault();
+            if(!checkAdminAction()) return;
+            const btn = document.getElementById('saveSimpleBtn');
+            btn.disabled = true; btn.innerText = "Menyimpan...";
+            
+            let payload = { name: document.getElementById('s_name').value.trim() };
+            if(collection === 'locations') payload.code = document.getElementById('s_code').value.trim();
+            if(collection === 'personnel') { payload.position = document.getElementById('s_pos').value.trim(); payload.department = document.getElementById('s_dept').value.trim(); }
+
+            try {
+                const { error } = await supabaseClient.from(collection).insert([payload]);
+                if (error) throw error;
+                showToast("Rekod induk berjaya ditambah.");
+                await fetchAllData();
+                STATE.modal = null; renderApp();
+            } catch (err) { showToast(err.message, "error"); btn.disabled = false; btn.innerText = "Simpan Rekod"; }
+        }
+
+        function modalMovementForm() {
+            return `
+                <form onsubmit="saveTransaction(event, 'movements')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Pilih Aset <span class="text-red-500">*</span></label>
+                            <select id="t_asset_id" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Sila Pilih Aset --</option>${getAssetSelectOptions()}</select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Lokasi / Penempatan Baru <span class="text-red-500">*</span></label><input type="text" id="t_new_location" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Pergerakan</label><input type="date" id="t_out_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tujuan Pergerakan / Pinjaman <span class="text-red-500">*</span></label><input type="text" id="t_purpose" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Status Pergerakan</label>
+                            <select id="t_status" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="Dalam Pergerakan">Dalam Pergerakan</option><option value="Dipulangkan">Selesai / Dipulangkan</option></select>
+                        </div>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-bold shadow-sm">Rekod Pergerakan</button></div>
+                </form>
+            `;
+        }
+
+        function modalMaintenanceForm() {
+            return `
+                <form onsubmit="saveTransaction(event, 'maintenance')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Pilih Aset <span class="text-red-500">*</span></label>
+                            <select id="t_asset_id" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Sila Pilih Aset --</option>${getAssetSelectOptions()}</select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Jenis Penyelenggaraan <span class="text-red-500">*</span></label><input type="text" id="t_type" placeholder="Cth: PM Berkala, Tukar Alat Ganti" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Mula</label><input type="date" id="t_start_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Anggaran Kos (RM)</label><input type="number" step="0.01" id="t_cost" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Status</label>
+                            <select id="t_status" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="Dijadualkan">Dijadualkan</option><option value="Sedang Diselenggara">Sedang Diselenggara</option><option value="Selesai">Selesai</option></select>
+                        </div>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-bold shadow-sm">Rekod Penyelenggaraan</button></div>
+                </form>
+            `;
+        }
+
+        function modalDamageForm() {
+            return `
+                <form onsubmit="saveTransaction(event, 'damage')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Pilih Aset <span class="text-red-500">*</span></label>
+                            <select id="t_asset_id" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Sila Pilih Aset --</option>${getAssetSelectOptions()}</select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Jenis/Simptom Kerosakan <span class="text-red-500">*</span></label><input type="text" id="t_damage_type" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Dilaporkan</label><input type="date" id="t_report_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tahap Keutamaan</label>
+                            <select id="t_priority" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="Sederhana">Sederhana - Boleh Beroperasi</option><option value="Tinggi">Tinggi - Tidak Boleh Beroperasi</option></select>
+                        </div>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold shadow-sm">Hantar Aduan Kerosakan</button></div>
+                </form>
+            `;
+        }
+
+        function modalInspectionForm() {
+            return `
+                <form onsubmit="saveTransaction(event, 'inspections')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Pilih Aset <span class="text-red-500">*</span></label>
+                            <select id="t_asset_id" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Sila Pilih Aset --</option>${getAssetSelectOptions()}</select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Keadaan Aset Semasa <span class="text-red-500">*</span></label>
+                            <select id="t_condition" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="BAIK">BAIK (Boleh Digunakan)</option><option value="ROSAK">ROSAK (Perlu Pembaikan)</option><option value="HILANG">TIDAK DIJUMPAI / HILANG</option></select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Semakan</label><input type="date" id="t_inspection_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tindakan Susulan / Catatan</label><input type="text" id="t_notes" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-bold shadow-sm">Rekod Semakan Aset</button></div>
+                </form>
+            `;
+        }
+
+        function modalDisposalForm() {
+            return `
+                <form onsubmit="saveTransaction(event, 'disposals')" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Pilih Aset (Untuk Dilupus) <span class="text-red-500">*</span></label>
+                            <select id="t_asset_id" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Sila Pilih Aset --</option>${getAssetSelectOptions()}</select>
+                        </div>
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Sebab Utama Pelupusan (PEP) <span class="text-red-500">*</span></label><input type="text" id="t_reason" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kaedah Pelupusan Cadangan</label>
+                            <select id="t_method" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="E-Waste">E-Waste / Sisa Elektronik</option><option value="Jualan Sisa">Jualan Sisa / Besi Buruk</option><option value="Musnah">Musnah / Buang</option></select>
+                        </div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Cadangan</label><input type="date" id="t_proposal_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                    </div>
+                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg text-sm font-bold shadow-sm">Buka Fail Pelupusan</button></div>
+                </form>
+            `;
+        }
+
+        async function saveTransaction(e, table) {
+            e.preventDefault();
+            if(!checkAdminAction()) return;
+            const btn = document.getElementById('saveTransBtn');
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 mx-auto"></div>`; btn.disabled = true;
+
+            let payload = { asset_id: document.getElementById('t_asset_id').value };
+            
+            if(table === 'movements') {
+                payload.new_location = document.getElementById('t_new_location').value;
+                payload.out_date = document.getElementById('t_out_date').value || null;
+                payload.purpose = document.getElementById('t_purpose').value;
+                payload.status = document.getElementById('t_status').value;
+            } else if (table === 'maintenance') {
+                payload.type = document.getElementById('t_type').value;
+                payload.start_date = document.getElementById('t_start_date').value || null;
+                payload.cost = parseFloat(document.getElementById('t_cost').value) || 0;
+                payload.status = document.getElementById('t_status').value;
+            } else if (table === 'damage') {
+                payload.damage_type = document.getElementById('t_damage_type').value;
+                payload.report_date = document.getElementById('t_report_date').value || null;
+                payload.priority = document.getElementById('t_priority').value;
+                payload.status = "Dilaporkan";
+            } else if (table === 'inspections') {
+                payload.condition = document.getElementById('t_condition').value;
+                payload.inspection_date = document.getElementById('t_inspection_date').value || null;
+                payload.notes = document.getElementById('t_notes').value;
+                payload.inspector_name = STATE.profile?.name || STATE.user.email;
+                payload.status = "Selesai Direkod";
+            } else if (table === 'disposals') {
+                payload.reason = document.getElementById('t_reason').value;
+                payload.proposal_date = document.getElementById('t_proposal_date').value || null;
+                payload.method = document.getElementById('t_method').value;
+                payload.status = "Cadangan";
+            }
+
+            try {
+                const { error } = await supabaseClient.from(table).insert([payload]);
+                if (error) throw error;
+
+                // Auto-update asset last_inspection_date if it's an inspection
+                if (table === 'inspections') {
+                    await supabaseClient.from('assets').update({ last_inspection_date: payload.inspection_date }).eq('id', payload.asset_id);
+                }
+
+                showToast("Rekod transaksi berjaya disimpan.");
+                await fetchAllData();
+                STATE.modal = null; renderApp();
+            } catch (err) {
+                showToast(err.message, "error");
+                btn.innerText = `Cuba Semula`; btn.disabled = false;
             }
         }
 
         function modalUserForm() {
             return `
-                <form onsubmit="saveUserForm(event)" class="space-y-4">
-                    <div><label class="block text-sm font-semibold text-slate-700 mb-1">Nama Penuh <span class="text-red-500">*</span></label><input type="text" id="u_name" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"></div>
-                    <div><label class="block text-sm font-semibold text-slate-700 mb-1">E-mel Log Masuk <span class="text-red-500">*</span></label><input type="email" id="u_email" required class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"></div>
-                    <div><label class="block text-sm font-semibold text-slate-700 mb-1">Kata Laluan Awal <span class="text-red-500">*</span></label><input type="text" id="u_pass" required minlength="6" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg"></div>
-                    <div><label class="block text-sm font-semibold text-slate-700 mb-1">Peranan Sistem</label>
-                        <select id="u_role" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white">
-                            <option value="USER">USER (Baca Sahaja)</option><option value="ADMIN">ADMIN (Akses Penuh)</option>
-                        </select>
+                <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6 text-sm text-blue-800">
+                    <p class="font-bold mb-1">Maklumat Penting Pengesahan Pelayan</p>
+                    <p>Borang ini berhubung terus dengan fungsi <b>RPC (Remote Procedure Call)</b> dalam pangkalan data PostgreSQL Supabase untuk memintas (bypass) pengesahan e-mel. Pastikan skrip SQL \`admin_create_user\` telah dijalankan terlebih dahulu.</p>
+                </div>
+                <form onsubmit="saveUserForm(event)" class="space-y-5">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Nama Penuh Staf <span class="text-red-500">*</span></label><input type="text" id="u_name" required class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">E-mel Rasmi (ID Log Masuk) <span class="text-red-500">*</span></label><input type="email" id="u_email" required class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Peranan Kuasa Sistem</label>
+                            <select id="u_role" class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg bg-white focus:ring-2 focus:ring-primary outline-none">
+                                <option value="USER">USER (Baca Sahaja & Laporan)</option><option value="ADMIN">ADMIN (Urus Data & Aset)</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kata Laluan Permulaan <span class="text-red-500">*</span></label><input type="text" id="u_pass" required minlength="6" placeholder="Cth: AdminBiokimia123!" class="w-full px-4 py-2.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none">
+                        <p class="text-xs text-slate-500 mt-1">Sila berikan kata laluan ini kepada pengguna secara peribadi. Minimum 6 aksara.</p></div>
                     </div>
-                    <div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveUserBtn" class="px-5 py-2 bg-primary text-white rounded-lg text-sm font-bold shadow-sm">Daftar Pengguna</button></div>
+                    <div class="pt-5 border-t border-slate-100 flex justify-end gap-3"><button type="submit" id="saveUserBtn" class="px-6 py-2.5 bg-primary hover:bg-blue-700 text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Daftarkan Pengguna</button></div>
                 </form>
             `;
         }
@@ -572,10 +1037,9 @@
             if(!checkAdminAction()) return;
             
             const btn = document.getElementById('saveUserBtn');
-            btn.innerHTML = `<div class="loader w-4 h-4 border-2"></div>`; btn.disabled = true;
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 mx-auto"></div>`; btn.disabled = true;
 
             try {
-                // Memanggil Fungsi RPC PostgreSQL untuk cipta akaun dan bypass pengesahan e-mel
                 const { error } = await supabaseClient.rpc('admin_create_user', {
                     email: document.getElementById('u_email').value.trim().toLowerCase(),
                     password: document.getElementById('u_pass').value.trim(),
@@ -584,32 +1048,37 @@
                 });
 
                 if (error) throw error;
-                showToast("Pengguna baharu berjaya didaftarkan.");
+                showToast("Pengguna baharu telah didaftarkan dalam sistem dan sedia dilog masuk.");
                 await fetchAllData();
                 STATE.modal = null;
                 renderApp();
             } catch (err) {
                 showToast(err.message, "error");
-                btn.innerHTML = `Daftar Pengguna`; btn.disabled = false;
+                btn.innerHTML = `Daftarkan Pengguna`; btn.disabled = false;
             }
         }
 
-        function modalAssetForm(id) { return '<div class="text-center text-sm text-slate-500">Borang Aset sedang disatukan...</div>'; }
-        function modalLifecycleForm(type, id) { return '<div class="text-center text-sm text-slate-500">Borang Transaksi sedang disatukan...</div>'; }
-
         async function deleteRecord(collection, id) {
-            if(!checkAdminAction() || !confirm("Adakah anda pasti? Rekod akan ditanda sebagai dilupuskan/dipadam.")) return;
+            if(!checkAdminAction()) return;
+            const msg = collection === 'assets' ? "AMARAN: Anda pasti ingin menanda aset ini sebagai DILUPUSKAN secara kekal dari paparan utama?" : "Pasti ingin memadam rekod induk ini?";
+            if(!confirm(msg)) return;
+            
             try {
                 if(collection === 'assets') {
+                    // Soft Delete implementation as requested in requirements
                     const { error } = await supabaseClient.from('assets').update({ is_deleted: true, status: 'DILUPUSKAN' }).eq('id', id);
                     if (error) throw error;
+                } else {
+                    const { error } = await supabaseClient.from(collection).delete().eq('id', id);
+                    if (error) throw error;
                 }
-                showToast("Tindakan berjaya.");
+                showToast("Tindakan berjaya. Rekod telah dipadamkan/dikemaskini.");
                 await fetchAllData();
                 STATE.modal = null; renderApp();
             } catch (err) { showToast(err.message, "error"); }
         }
 
+        // Jalankan aplikasi semasa halaman dimuatkan
         initApp();
     </script>
 </body>
