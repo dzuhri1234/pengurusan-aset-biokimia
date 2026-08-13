@@ -1,525 +1,1060 @@
 <!DOCTYPE html>
 <html lang="ms">
 <head>
-    <meta charset="UTF-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    <title>Sistem Pengurusan Aset Alih - Seksyen Biokimia</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Supabase JS Client -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- QR Code Generator -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-    <!-- Custom Theme Config -->
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        navy: { 900: '#14294A', 800: '#1F3864', 700: '#2E5090' }
-                    }
-                }
-            }
-        }
-    </script>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        .fade-in { animation: fadeIn 0.3s ease-in-out; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        #toastWrap { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
-    </style>
-</head>
-<body class="bg-gray-50 text-gray-800 h-screen overflow-hidden flex flex-col">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Sistem Pengurusan Aset Alih - Seksyen Biokimia VRI Ipoh</title>
+<!-- Supabase JS Client -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Chart.js for Dashboard Graphs -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- QR Code Generator -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
 
-    <div id="app" class="h-full w-full flex">
-        <!-- Tetingkap Memuatkan Penuh -->
-        <div class="w-full h-full flex items-center justify-center bg-navy-900 text-white">
-            <div class="text-center">
-                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-                <p>Memuatkan Sistem Aset...</p>
-            </div>
-        </div>
-    </div>
-    <div id="toastWrap"></div>
+<style>
+:root{
+  --navy:#1F3864; --navy-dark:#14294A; --navy-light:#2E5090;
+  --bg:#F4F6F9; --card:#FFFFFF; --border:#E2E6ED; --text:#1D2733; --muted:#6B7686;
+  --green:#1E8E5A; --green-bg:#E6F4EC;
+  --red:#C0392B; --red-bg:#FBEAE8;
+  --orange:#B9770E; --orange-bg:#FCF1DE;
+  --grey:#6B7280; --grey-bg:#EEF0F3;
+  --blue:#2563AB; --blue-bg:#E7EFFA;
+  --purple:#7E3F98; --purple-bg:#F1E7F5;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:14px;}
+#app{min-height:100vh;}
+button{font-family:inherit;cursor:pointer;}
+input,select,textarea{font-family:inherit;font-size:14px;}
+
+/* ---- Login ---- */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(135deg,var(--navy-dark),var(--navy-light));}
+.login-card{background:#fff;border-radius:12px;padding:36px 40px;width:380px;box-shadow:0 20px 50px rgba(0,0,0,.25);}
+.login-card h1{font-size:18px;color:var(--navy);margin:0 0 4px;}
+.login-card .sub{color:var(--muted);font-size:12.5px;margin-bottom:22px;}
+.login-card label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin:14px 0 5px;}
+.login-card input,.login-card select{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:7px;}
+.login-card button.primary{width:100%;margin-top:20px;background:var(--navy);color:#fff;border:none;
+  padding:11px;border-radius:7px;font-weight:600;font-size:14px;}
+.login-card button.primary:hover{background:var(--navy-light);}
+.login-err{background:var(--red-bg);color:var(--red);padding:8px 10px;border-radius:6px;font-size:12.5px;margin-top:12px;}
+
+/* ---- Shell ---- */
+.shell{display:flex;min-height:100vh;}
+.sidebar{width:230px;background:var(--navy-dark);color:#dfe6f2;flex-shrink:0;display:flex;flex-direction:column;}
+.sidebar .brand{padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.08);}
+.sidebar .brand b{color:#fff;font-size:14.5px;display:block;}
+.sidebar .brand span{font-size:11px;color:#9fb0cc;}
+.sidebar nav{flex:1;overflow-y:auto;padding:10px 0;}
+.navgroup-label{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:#7c8db3;padding:14px 18px 6px;}
+.navitem{display:flex;align-items:center;gap:9px;padding:9px 18px;color:#cfd9ec;text-decoration:none;font-size:13.3px;
+  cursor:pointer;border-left:3px solid transparent;}
+.navitem:hover{background:rgba(255,255,255,.06);}
+.navitem.active{background:rgba(255,255,255,.10);border-left-color:#6EA8FF;color:#fff;font-weight:600;}
+.sidebar .userbox{border-top:1px solid rgba(255,255,255,.08);padding:12px 18px;font-size:12px;color:#b9c5dd;}
+.sidebar .userbox b{color:#fff;display:block;font-size:13px;word-break: break-all;}
+.sidebar .userbox button{margin-top:8px;background:rgba(255,255,255,.08);border:none;color:#fff;
+  padding:6px 10px;border-radius:6px;font-size:11.5px; width: 100%;}
+.sidebar .userbox button:hover{background:rgba(255,255,255,.15);}
+
+.main{flex:1;min-width:0;display:flex;flex-direction:column;}
+.topbar{background:#fff;border-bottom:1px solid var(--border);padding:14px 26px;display:flex;
+  align-items:center;justify-content:space-between;}
+.topbar h1{font-size:17px;margin:0;color:var(--navy);}
+.topbar .role-badge{font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;}
+.role-ADMIN{background:var(--red);color:#fff;}
+.role-USER{background:var(--blue);color:#fff;}
+.content{padding:22px 26px;flex:1;overflow-y:auto;}
+
+/* ---- Cards / stats ---- */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px;}
+.stat-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+.stat-card .n{font-size:24px;font-weight:700;color:var(--navy);}
+.stat-card .l{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.stat-card.attn{border-color:#ecd3ae;background:var(--orange-bg);}
+.stat-card.attn .n{color:var(--orange);}
+
+.panel{background:#fff;border:1px solid var(--border);border-radius:10px;padding:18px 20px;margin-bottom:18px;}
+.panel h2{font-size:14.5px;margin:0 0 14px;color:var(--navy);}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+@media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+
+/* ---- Toolbar / table ---- */
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px;}
+.toolbar input[type=text],.toolbar select{padding:8px 10px;border:1px solid var(--border);border-radius:7px;background:#fff;}
+.toolbar input[type=text]{min-width:220px;}
+.spacer{flex:1;}
+.btn{border:1px solid var(--border);background:#fff;padding:8px 14px;border-radius:7px;font-size:13px;font-weight:600;color:var(--text);}
+.btn:hover{background:#F4F6F9;}
+.btn.primary{background:var(--navy);border-color:var(--navy);color:#fff;}
+.btn.primary:hover{background:var(--navy-light);}
+.btn.danger{color:var(--red);border-color:#f0c7c1;}
+.btn.danger:hover{background:var(--red-bg);}
+.btn.sm{padding:5px 10px;font-size:12px;}
+.btn:disabled{opacity:.45;cursor:not-allowed;}
+
+table.data{width:100%;border-collapse:collapse;background:#fff;font-size:13px;}
+table.data th{background:#F7F9FC;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.03em;
+  text-align:left;padding:9px 10px;border-bottom:2px solid var(--border);white-space:nowrap;}
+table.data td{padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top;}
+table.data tr:hover td{background:#FAFBFD;}
+.table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:#fff;}
+.cell-actions{display:flex;gap:6px;white-space:nowrap;}
+.muted{color:var(--muted);}
+.small{font-size:11.5px;}
+
+/* ---- badges ---- */
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
+.b-MASIH_DIGUNAKAN{background:var(--green-bg);color:var(--green);}
+.b-ROSAK{background:var(--red-bg);color:var(--red);}
+.b-CADANG_LUPUS{background:var(--orange-bg);color:var(--orange);}
+.b-DILUPUSKAN{background:var(--grey-bg);color:var(--grey);}
+.b-DEFAULT{background:var(--grey-bg);color:var(--grey);}
+
+/* workflow chip row */
+.flow{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0 4px;}
+.flow .step{font-size:11px;padding:4px 10px;border-radius:20px;background:var(--grey-bg);color:var(--muted);font-weight:600;}
+.flow .step.done{background:var(--green-bg);color:var(--green);}
+.flow .step.current{background:var(--navy);color:#fff;}
+.flow .arrow{color:var(--border);font-size:12px;}
+
+/* ---- modal ---- */
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:flex-start;
+  justify-content:center;padding:36px 16px;overflow-y:auto;z-index:50;}
+.modal{background:#fff;border-radius:12px;width:100%;max-width:640px;box-shadow:0 25px 60px rgba(0,0,0,.3);}
+.modal.wide{max-width:860px;}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);}
+.modal-head h3{margin:0;font-size:15.5px;color:var(--navy);}
+.modal-close{background:none;border:none;font-size:20px;color:var(--muted);line-height:1;}
+.modal-body{padding:20px 22px;max-height:70vh;overflow-y:auto;}
+.modal-foot{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.form-grid.single{grid-template-columns:1fr;}
+.field{display:flex;flex-direction:column;gap:5px;}
+.field.span2{grid-column:1/-1;}
+.field label{font-size:12px;font-weight:600;color:var(--muted);}
+.field label .req{color:var(--red);}
+.field input,.field select,.field textarea{padding:8px 10px;border:1px solid var(--border);border-radius:7px;width:100%;}
+.field textarea{resize:vertical;min-height:60px;}
+
+/* detail view */
+.dl{display:grid;grid-template-columns:170px 1fr;gap:8px 14px;font-size:13px;}
+.dl dt{color:var(--muted);}
+.dl dd{margin:0;font-weight:500;}
+.section-title{font-size:12.5px;font-weight:700;color:var(--navy);text-transform:uppercase;letter-spacing:.03em;
+  margin:20px 0 8px;padding-top:14px;border-top:1px solid var(--border);}
+.section-title:first-of-type{border-top:none;margin-top:4px;padding-top:0;}
+.empty{color:var(--muted);font-size:12.5px;padding:14px 0;text-align:center;}
+
+.toast-wrap{position:fixed;top:18px;right:18px;z-index:100;display:flex;flex-direction:column;gap:8px;}
+.toast{background:var(--navy-dark);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;box-shadow:0 8px 20px rgba(0,0,0,.25);}
+.toast.err{background:var(--red);}
+.toast.ok{background:var(--green);}
+
+.qr-container { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); margin-top: 10px; width: fit-content;}
+
+/* ---- Responsive / mobile ---- */
+.hamburger{display:none;background:none;border:none;font-size:22px;color:var(--navy);cursor:pointer;padding:2px 6px;line-height:1;}
+.sidebar-backdrop{display:none;}
+@media(max-width:860px){
+  .hamburger{display:inline-block;}
+  .shell{position:relative;overflow-x:hidden;}
+  .sidebar{position:fixed;top:0;left:0;bottom:0;z-index:60;width:250px;max-width:80vw;
+    transform:translateX(-100%);transition:transform .22s ease;box-shadow:0 0 30px rgba(0,0,0,.35);}
+  .sidebar.open{transform:translateX(0);}
+  .sidebar-backdrop{display:none;position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:55;}
+  .sidebar-backdrop.show{display:block;}
+  .main{width:100%;min-width:0;}
+  .content{padding:14px;}
+  .stat-grid{grid-template-columns:repeat(2,1fr);gap:10px;}
+  .form-grid{grid-template-columns:1fr!important;}
+  .dl{grid-template-columns:1fr!important;gap:2px 0;}
+  .dl dt{margin-top:10px;}
+  .modal,.modal.wide{max-width:100%;width:100%;border-radius:10px;}
+  .overlay{padding:0;align-items:stretch;}
+  .overlay .modal{margin:auto 0 0;max-height:92vh;display:flex;flex-direction:column;border-radius:14px 14px 0 0;}
+  .modal-body{max-height:none;flex:1;overflow-y:auto;}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toastWrap" class="toast-wrap"></div>
 
 <script>
 /* ============================================================
-   FRONTEND SPA - MENGGUNAKAN SUPABASE
+   SISTEM PENGURUSAN ASET ALIH - SEKSYEN BIOKIMIA
+   Backend: Supabase
    ============================================================ */
 
-// >>> LANGKAH 1: MASUKKAN URL & KUNCI ANON SUPABASE ANDA DI SINI <<<
-const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
+const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; // Ganti dengan URL projek anda
+const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA"; // Ganti dengan kunci "anon public" projek anda
 
 let supabaseClient;
-
-// Semak jika kunci belum dimasukkan
-if(SUPABASE_URL.includes("MASUKKAN-PROJECT-REF")){
-    document.getElementById('app').innerHTML = `
-        <div class="w-full h-full flex items-center justify-center bg-gray-100 p-8">
-            <div class="bg-white p-8 rounded shadow text-center max-w-lg">
-                <h1 class="text-xl font-bold text-red-600 mb-2">Supabase Belum Dikonfigurasi</h1>
-                <p class="text-sm text-gray-600">Sila buka fail <code>index.html</code> dan kemaskini pembolehubah <code>SUPABASE_URL</code> dan <code>SUPABASE_ANON_KEY</code> di baris ke-45.</p>
-            </div>
-        </div>
-    `;
-    throw new Error("Konfigurasi Supabase tiada.");
-} else {
-    supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-}
-
 const STATE = {
-    user: null,
-    profile: null,
-    view: 'dashboard',
-    assets: [],
-    auditLogs: []
+  user: null,          // session.user
+  profile: null,       // user_profiles data
+  view: "dashboard",
+  loading: true,
+  modal: null,
+  
+  // Data caches
+  assets: [],
+  locations: [],
+  categories: [],
+  personnel: [],
+  maintenance: [],
+  damage: [],
+  movements: [],
+  inspections: [],
+  disposals: [],
+  auditLogs: [],
+  
+  assetFilter: { q:"", status:"", kategori:"", lokasi:"" },
+  sidebarOpen: false
 };
 
-// ==========================================
-// UTILITI PENGURUSAN MESEJ (TOAST)
-// ==========================================
-function toast(msg, type = "success") {
-    const wrap = document.getElementById("toastWrap");
-    const el = document.createElement("div");
-    el.className = `${type === "success" ? "bg-emerald-600" : "bg-red-600"} text-white px-4 py-3 rounded shadow-lg text-sm fade-in`;
-    el.innerText = msg;
-    wrap.appendChild(el);
-    setTimeout(() => { el.remove(); }, 4000);
+const STATUS_LIST = ["MASIH DIGUNAKAN","ROSAK","CADANG LUPUS","DILUPUSKAN"];
+const DAMAGE_FLOW = ["Dilaporkan","Dalam Semakan","Dalam Pembaikan","Selesai","Ditutup"];
+const MOVEMENT_FLOW = ["Permohonan","Dalam Pergerakan","Dipulangkan"];
+const DISPOSAL_FLOW = ["Cadangan","Kelulusan","Selesai"];
+
+// --- UTILITIES ---
+function toast(msg, kind = "ok"){
+  const wrap = document.getElementById("toastWrap");
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.innerText = msg;
+  wrap.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
 }
 
-function esc(str) {
-    if (!str) return "";
-    return str.toString().replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+function esc(s){
+  if(s===undefined||s===null) return "";
+  return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 }
 
-// ==========================================
-// PENGURUSAN PENGESAHAN (AUTH) SUPABASE
-// ==========================================
-supabaseClient.auth.onAuthStateChange(async (event, session) => {
-    if (session) {
-        STATE.user = session.user;
-        await fetchUserProfile(session.user.id);
-        renderApp();
-    } else {
-        STATE.user = null;
-        STATE.profile = null;
-        renderApp();
+function badgeClass(status){ 
+    if(!status) return "badge b-DEFAULT";
+    return "badge b-" + status.replace(/\s+/g, '_'); 
+}
+
+function fmtDate(d){ 
+    if(!d) return "\u2014"; 
+    try {
+        const date = new Date(d);
+        if(isNaN(date.getTime())) return d; // If not a valid date string, return as is
+        return date.toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch(e) {
+        return d;
     }
-});
+}
 
-async function fetchUserProfile(userId) {
+function isAdmin() {
+    return STATE.profile && STATE.profile.role === 'ADMIN';
+}
+
+function requireAdmin(){
+  if(!isAdmin()){
+    toast("Akses Ditolak: Memerlukan peranan Admin.", "err");
+    return false;
+  }
+  return true;
+}
+
+function assetLabel(a){
+  if(!a) return "";
+  return (a.no_siri||a.id) + " \u2014 " + (a.nama||"").slice(0,50);
+}
+
+function personnelLabel(id){
+    if(!id) return "\u2014";
+    const p = STATE.personnel.find(x => x.id === id);
+    return p ? p.nama : id;
+}
+
+function locationLabel(id){
+    if(!id) return "\u2014";
+    const l = STATE.locations.find(x => x.id === id);
+    return l ? l.nama : id;
+}
+
+// --- INIT & AUTH ---
+async function init(){
+  if(!SUPABASE_URL || SUPABASE_URL.includes("MASUKKAN")){
+     document.getElementById("app").innerHTML = `<div class="login-wrap"><div class="login-card"><h2>Ralat Konfigurasi</h2><p>Sila masukkan SUPABASE_URL dan SUPABASE_ANON_KEY di dalam kod index.html</p></div></div>`;
+     return;
+  }
+  
+  supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    if (session) {
+      STATE.user = session.user;
+      await fetchProfile(session.user.id);
+      await loadAllData();
+      STATE.loading = false;
+      render();
+    } else {
+      STATE.user = null;
+      STATE.profile = null;
+      STATE.loading = false;
+      render();
+    }
+  });
+}
+
+async function fetchProfile(userId) {
     const { data, error } = await supabaseClient.from('user_profiles').select('*').eq('id', userId).single();
-    if (!error && data) {
+    if (data) {
         STATE.profile = data;
     } else {
-        // Jika profil tiada, set sebagai USER biasa secara lalai
-        STATE.profile = { role: 'USER', name: STATE.user.email };
+        // Fallback if profile doesn't exist yet
+        STATE.profile = { role: 'USER', email: STATE.user.email };
     }
 }
 
-async function doLogin(e) {
-    e.preventDefault();
-    const email = document.getElementById('loginEmail').value;
-    const password = document.getElementById('loginPassword').value;
-    const btn = document.getElementById('loginBtn');
-    btn.innerText = "Mengesahkan..."; btn.disabled = true;
+async function doLogin(email, password){
+  const btn = document.getElementById("loginBtn");
+  btn.disabled = true; btn.textContent = "Mengesahkan...";
+  
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  
+  if (error) {
+    document.getElementById("loginError").innerHTML = `<div class="login-err">${esc(error.message)}</div>`;
+    btn.disabled = false; btn.textContent = "Log Masuk";
+  } else {
+    toast("Log masuk berjaya");
+  }
+}
 
-    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-    
-    if (error) {
-        document.getElementById('loginError').innerText = "E-mel atau kata laluan tidak sah.";
-        btn.innerText = "Log Masuk"; btn.disabled = false;
-    } else {
-        toast("Log masuk berjaya");
+async function doLogout(){
+  await supabaseClient.auth.signOut();
+  toast("Berjaya log keluar", "info");
+}
+
+// --- DATA FETCHING ---
+async function loadAllData() {
+    try {
+        const [assetsRes, locRes, catRes, picRes, maintRes, dmgRes, movRes, inspRes, dispRes] = await Promise.all([
+            supabaseClient.from('assets').select('*').eq('is_deleted', false).order('created_at', { ascending: false }),
+            supabaseClient.from('locations').select('*').order('nama'),
+            supabaseClient.from('categories').select('*').order('nama'),
+            supabaseClient.from('personnel').select('*').order('nama'),
+            supabaseClient.from('maintenance').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('damage').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('movements').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('inspections').select('*').order('created_at', { ascending: false }),
+            supabaseClient.from('disposals').select('*').order('created_at', { ascending: false })
+        ]);
+
+        if(assetsRes.data) STATE.assets = assetsRes.data;
+        if(locRes.data) STATE.locations = locRes.data;
+        if(catRes.data) STATE.categories = catRes.data;
+        if(picRes.data) STATE.personnel = picRes.data;
+        if(maintRes.data) STATE.maintenance = maintRes.data;
+        if(dmgRes.data) STATE.damage = dmgRes.data;
+        if(movRes.data) STATE.movements = movRes.data;
+        if(inspRes.data) STATE.inspections = inspRes.data;
+        if(dispRes.data) STATE.disposals = dispRes.data;
+
+        if (isAdmin()) {
+            const { data } = await supabaseClient.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
+            if(data) STATE.auditLogs = data;
+        }
+    } catch (e) {
+        toast("Ralat memuat turun data: " + e.message, "err");
+        console.error(e);
     }
 }
 
-async function doLogout() {
-    await supabaseClient.auth.signOut();
-    toast("Telah log keluar", "info");
+// --- RENDER ENGINE ---
+function render(){
+  const root = document.getElementById("app");
+  if(STATE.loading){
+    root.innerHTML = `<div class="login-wrap"><div class="login-card" style="text-align:center;"><h2>Memuatkan...</h2></div></div>`;
+    return;
+  }
+  if(!STATE.user){ root.innerHTML = renderLogin(); bindLoginEvents(); return; }
+  
+  root.innerHTML = renderShell();
+  bindShellEvents();
+  
+  if (STATE.view === 'dashboard' && STATE.assets.length > 0) {
+      renderCharts();
+  }
 }
 
-// ==========================================
-// PEMAPARAN ANTARAMUKA (UI)
-// ==========================================
-function renderApp() {
-    const root = document.getElementById('app');
-    if (!STATE.user || !STATE.profile) {
-        root.innerHTML = renderLogin();
-        document.getElementById('loginForm').addEventListener('submit', doLogin);
-        return;
-    }
-    
-    root.innerHTML = `
-        <!-- Sidebar -->
-        <div class="w-64 bg-navy-900 text-white flex flex-col hidden md:flex">
-            <div class="p-5 border-b border-navy-700">
-                <h1 class="font-bold text-lg leading-tight">Aset Alih Biokimia</h1>
-                <p class="text-xs text-blue-300 mt-1">VRI Ipoh &middot; SPA Supabase</p>
-            </div>
-            <nav class="flex-1 overflow-y-auto py-4 space-y-1 px-2">
-                <button onclick="navigate('dashboard')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-navy-800 ${STATE.view==='dashboard'?'bg-navy-700 font-bold':''}">📊 Dashboard</button>
-                <button onclick="navigate('assets')" class="w-full text-left px-3 py-2 rounded text-sm mt-2 hover:bg-navy-800 ${STATE.view==='assets'?'bg-navy-700 font-bold':''}">📦 Senarai Aset</button>
-                
-                ${STATE.profile.role === 'ADMIN' ? `
-                <div class="mt-6 mb-2 ml-3 text-xs font-semibold text-gray-400 uppercase tracking-wider">Pentadbir Sahaja</div>
-                <button onclick="navigate('audit')" class="w-full text-left px-3 py-2 rounded text-sm hover:bg-navy-800 ${STATE.view==='audit'?'bg-navy-700 font-bold':''}">🛡️ Jejak Audit (System Log)</button>
-                ` : ''}
-            </nav>
-            <div class="p-4 bg-navy-800 text-sm">
-                <div class="font-bold truncate">${esc(STATE.profile.name || STATE.user.email)}</div>
-                <span class="inline-block mt-1 px-2 py-1 bg-blue-600 text-xs rounded-full font-semibold">${STATE.profile.role}</span>
-                <button onclick="doLogout()" class="mt-3 w-full bg-red-600 hover:bg-red-700 text-white py-1.5 rounded text-xs transition font-semibold">Log Keluar</button>
-            </div>
+function renderLogin(){
+  return `
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>Pengurusan Aset Alih</h1>
+      <div class="sub">Seksyen Biokimia VRI (Supabase)</div>
+      <form id="loginForm" onsubmit="event.preventDefault(); handleLoginSubmit();">
+          <label>E-mel</label>
+          <input type="email" id="loginEmail" placeholder="admin@vri.gov.my" required/>
+          <label>Kata Laluan</label>
+          <input type="password" id="loginPassword" required/>
+          <button type="submit" class="primary" id="loginBtn">Log Masuk</button>
+          <div id="loginError"></div>
+      </form>
+    </div>
+  </div>`;
+}
+
+function handleLoginSubmit() {
+    const email = document.getElementById("loginEmail").value;
+    const password = document.getElementById("loginPassword").value;
+    doLogin(email, password);
+}
+
+const VIEW_TITLES = {
+  dashboard:"Papan Pemuka", assets:"Senarai Aset", maintenance:"Penyelenggaraan",
+  damage:"Laporan Kerosakan", movements:"Pergerakan / Pinjaman", inspections:"Pemeriksaan",
+  disposals:"Pelupusan", locations:"Tetapan Lokasi", categories:"Tetapan Kategori", personnel:"Tetapan Pemegang (PIC)", audit: "Jejak Audit"
+};
+
+function renderShell(){
+  const isAdm = isAdmin();
+  return `
+  <div class="shell">
+    <div class="sidebar-backdrop ${STATE.sidebarOpen?'show':''}" id="sidebarBackdrop"></div>
+    <div class="sidebar ${STATE.sidebarOpen?'open':''}">
+      <div class="brand"><b>Aset Biokimia</b><span>VRI Ipoh</span></div>
+      <nav>
+        <div class="navgroup-label">Utama</div>
+        <div class="navitem ${STATE.view==='dashboard'?'active':''}" data-nav="dashboard">📊 Dashboard</div>
+        <div class="navitem ${STATE.view==='assets'?'active':''}" data-nav="assets">📦 Senarai Aset</div>
+        
+        <div class="navgroup-label">Kitaran Hayat</div>
+        <div class="navitem ${STATE.view==='maintenance'?'active':''}" data-nav="maintenance">🔧 Penyelenggaraan</div>
+        <div class="navitem ${STATE.view==='damage'?'active':''}" data-nav="damage">⚠️ Kerosakan</div>
+        <div class="navitem ${STATE.view==='movements'?'active':''}" data-nav="movements">🔄 Pergerakan</div>
+        <div class="navitem ${STATE.view==='inspections'?'active':''}" data-nav="inspections">📋 Pemeriksaan</div>
+        <div class="navitem ${STATE.view==='disposals'?'active':''}" data-nav="disposals">🗑️ Pelupusan</div>
+
+        ${isAdm ? `
+        <div class="navgroup-label">Tetapan Admin</div>
+        <div class="navitem ${STATE.view==='locations'?'active':''}" data-nav="locations">📍 Lokasi</div>
+        <div class="navitem ${STATE.view==='categories'?'active':''}" data-nav="categories">🏷️ Kategori</div>
+        <div class="navitem ${STATE.view==='personnel'?'active':''}" data-nav="personnel">👥 Pemegang (PIC)</div>
+        <div class="navitem ${STATE.view==='audit'?'active':''}" data-nav="audit">🛡️ Jejak Audit</div>
+        ` : ''}
+      </nav>
+      <div class="userbox">
+        <b>${esc(STATE.profile? STATE.profile.name : STATE.user.email)}</b>
+        <span class="role-badge role-${STATE.profile? STATE.profile.role : 'USER'} mt-1 block w-max">${STATE.profile? STATE.profile.role : 'USER'}</span>
+        <button id="logoutBtn" style="background: var(--red); margin-top: 10px;">Log Keluar</button>
+      </div>
+    </div>
+    <div class="main">
+      <div class="topbar">
+        <div style="display:flex; align-items:center; gap: 10px;">
+            <button class="hamburger" id="hamburgerBtn">&#9776;</button>
+            <h1>${VIEW_TITLES[STATE.view]}</h1>
         </div>
-
-        <!-- Main Content -->
-        <div class="flex-1 flex flex-col min-w-0 bg-gray-50 overflow-hidden">
-            <header class="bg-white border-b px-6 py-4 flex items-center justify-between">
-                <h2 class="text-xl font-bold text-navy-800 capitalize">${STATE.view}</h2>
-                <div class="text-xs text-gray-500 flex items-center gap-2">
-                    <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Pangkalan Data Terhubung
-                </div>
-            </header>
-            <main class="flex-1 overflow-y-auto p-6" id="mainContent">
-                <div class="flex justify-center items-center h-full"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-navy-800"></div></div>
-            </main>
-        </div>
-        <div id="modalContainer" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"></div>
-    `;
-
-    loadViewData();
+        <div class="small muted">🟢 Bersambung ke Supabase</div>
+      </div>
+      <div class="content" id="contentArea">${renderViewContent()}</div>
+    </div>
+  </div>
+  ${STATE.modal ? renderModal() : ""}
+  `;
 }
 
-function renderLogin() {
+function bindShellEvents(){
+  document.getElementById("logoutBtn").onclick = doLogout;
+  document.querySelectorAll("[data-nav]").forEach(el=>{
+    el.onclick = ()=>{ STATE.view = el.getAttribute("data-nav"); STATE.modal=null; STATE.sidebarOpen=false; render(); };
+  });
+  const hb = document.getElementById("hamburgerBtn");
+  if(hb) hb.onclick = () => { STATE.sidebarOpen = !STATE.sidebarOpen; render(); };
+  const bd = document.getElementById("sidebarBackdrop");
+  if(bd) bd.onclick = () => { STATE.sidebarOpen = false; render(); };
+  
+  if(STATE.view === 'assets') bindAssetsEvents();
+  if(STATE.view === 'locations' || STATE.view === 'categories' || STATE.view === 'personnel') bindSetupEvents();
+  if(['maintenance','damage','movements','inspections','disposals'].includes(STATE.view)) bindLifecycleEvents();
+  
+  if(STATE.modal) bindModalEvents();
+}
+
+function renderViewContent(){
+  if(STATE.view === "dashboard") return renderDashboard();
+  if(STATE.view === "assets") return renderAssets();
+  if(STATE.view === "locations") return renderSetupModule("locations", "Lokasi", ["nama", "kod"]);
+  if(STATE.view === "categories") return renderSetupModule("categories", "Kategori", ["nama"]);
+  if(STATE.view === "personnel") return renderSetupModule("personnel", "Pemegang (PIC)", ["nama", "jawatan", "seksyen"]);
+  if(STATE.view === "maintenance") return renderLifecycleModule("maintenance", "Penyelenggaraan", ["asset_id", "jenis", "start_date", "status"]);
+  if(STATE.view === "damage") return renderLifecycleModule("damage", "Kerosakan", ["asset_id", "report_date", "damage_type", "status"]);
+  if(STATE.view === "movements") return renderLifecycleModule("movements", "Pergerakan", ["asset_id", "borrower_id", "new_location", "status"]);
+  if(STATE.view === "inspections") return renderLifecycleModule("inspections", "Pemeriksaan", ["asset_id", "inspection_date", "condition"]);
+  if(STATE.view === "disposals") return renderLifecycleModule("disposals", "Pelupusan", ["asset_id", "proposal_date", "status"]);
+  if(STATE.view === "audit") return renderAudit();
+  return "Membina paparan...";
+}
+
+// --- DASHBOARD ---
+function renderDashboard(){
+    if(STATE.assets.length === 0){
+        return `<div class="panel"><h2>Selamat Datang</h2><p>Pangkalan data masih kosong. Sila mula mendaftar aset di menu 'Senarai Aset'.</p></div>`;
+    }
+
+    const total = STATE.assets.length;
+    const active = STATE.assets.filter(a => a.status === 'MASIH DIGUNAKAN').length;
+    const broken = STATE.assets.filter(a => a.status === 'ROSAK').length;
+    const disposed = STATE.assets.filter(a => a.status === 'DILUPUSKAN').length;
+
     return `
-    <div class="w-full h-full flex items-center justify-center bg-gradient-to-br from-navy-900 to-navy-700">
-        <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md fade-in">
-            <div class="text-center mb-6">
-                <h1 class="text-2xl font-bold text-navy-800">Pengurusan Aset Alih</h1>
-                <p class="text-sm text-gray-500 mt-1">Seksyen Biokimia VRI (Pangkalan Data Supabase)</p>
+    <div class="stat-grid">
+        <div class="stat-card"><div class="n">${total}</div><div class="l">Jumlah Aset</div></div>
+        <div class="stat-card" style="border-left: 4px solid var(--green);"><div class="n">${active}</div><div class="l">Aktif Digunakan</div></div>
+        <div class="stat-card" style="border-left: 4px solid var(--red);"><div class="n">${broken}</div><div class="l">Rosak</div></div>
+        <div class="stat-card" style="border-left: 4px solid var(--grey);"><div class="n">${disposed}</div><div class="l">Dilupuskan</div></div>
+    </div>
+    
+    <div class="two-col">
+        <div class="panel">
+            <h2>Pecahan Mengikut Status</h2>
+            <canvas id="statusChart" width="400" height="200"></canvas>
+        </div>
+        <div class="panel">
+            <h2>Kerosakan Terkini</h2>
+            <div class="table-wrap"><table class="data">
+                <thead><tr><th>Aset</th><th>Tarikh</th><th>Status</th></tr></thead>
+                <tbody>
+                ${STATE.damage.slice(0,5).map(d => `<tr>
+                    <td class="small">${assetLabel(STATE.assets.find(a=>a.id===d.asset_id))}</td>
+                    <td class="small">${fmtDate(d.report_date)}</td>
+                    <td class="small"><span class="${badgeClass(d.status)}">${esc(d.status)}</span></td>
+                </tr>`).join('')}
+                ${STATE.damage.length === 0 ? '<tr><td colspan="3" class="empty">Tiada rekod</td></tr>' : ''}
+                </tbody>
+            </table></div>
+        </div>
+    </div>
+    `;
+}
+
+function renderCharts() {
+    const ctx = document.getElementById('statusChart');
+    if(!ctx) return;
+    
+    const byStatus = {};
+    STATE.assets.forEach(a => { byStatus[a.status] = (byStatus[a.status] || 0) + 1; });
+    
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(byStatus),
+            datasets: [{
+                data: Object.values(byStatus),
+                backgroundColor: ['#1E8E5A', '#C0392B', '#B9770E', '#6B7280'],
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '60%' }
+    });
+}
+
+// --- ASSETS MODULE ---
+function filteredAssets(){
+  const f = STATE.assetFilter;
+  return STATE.assets.filter(a=>{
+    if(f.status && a.status!==f.status) return false;
+    if(f.q){
+      const q = f.q.toLowerCase();
+      const hay = (a.no_siri+" "+a.nama+" "+(a.lokasi_id||'')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+function renderAssets(){
+    const list = filteredAssets();
+    const isAdmin = STATE.profile && STATE.profile.role === 'ADMIN';
+    
+    return `
+    <div class="toolbar">
+        <input type="text" id="assetSearch" placeholder="Cari No. Siri / Nama..." value="${esc(STATE.assetFilter.q)}">
+        <select id="assetStatusFilter">
+            <option value="">Semua Status</option>
+            ${STATUS_LIST.map(s=>`<option value="${s}" ${STATE.assetFilter.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+        <div class="spacer"></div>
+        ${isAdmin ? `<button class="btn primary" onclick="openAssetForm()">+ Daftar Aset</button>` : ''}
+    </div>
+    
+    <div class="table-wrap"><table class="data">
+        <thead><tr><th>No. Siri</th><th>Nama Aset</th><th>Kategori</th><th>Lokasi</th><th>Status</th><th>Tindakan</th></tr></thead>
+        <tbody>
+        ${list.map(a => `<tr>
+            <td class="small font-mono">${esc(a.no_siri) || '-'}</td>
+            <td>${esc(a.nama)}</td>
+            <td class="small">${esc(a.kategori_id) || '-'}</td>
+            <td class="small">${esc(a.lokasi_id) || '-'}</td>
+            <td><span class="${badgeClass(a.status)}">${esc(a.status)}</span></td>
+            <td class="cell-actions">
+                <button class="btn sm" onclick="openAssetProfile('${a.id}')">Profil</button>
+                ${isAdmin ? `<button class="btn sm" onclick="openAssetForm('${a.id}')">Edit</button>` : ''}
+            </td>
+        </tr>`).join('')}
+        ${list.length===0 ? '<tr><td colspan="6" class="empty">Tiada aset dijumpai.</td></tr>' : ''}
+        </tbody>
+    </table></div>
+    `;
+}
+
+function bindAssetsEvents(){
+    const search = document.getElementById("assetSearch");
+    if(search) search.oninput = (e) => { STATE.assetFilter.q = e.target.value; render(); setTimeout(()=>document.getElementById("assetSearch").focus(),0);};
+    const status = document.getElementById("assetStatusFilter");
+    if(status) status.onchange = (e) => { STATE.assetFilter.status = e.target.value; render(); };
+}
+
+// --- SETUP MODULES (Locations, Categories, Personnel) ---
+function renderSetupModule(key, title, cols) {
+    const list = STATE[key];
+    const isAdmin = STATE.profile && STATE.profile.role === 'ADMIN';
+    
+    return `
+    <div class="toolbar">
+        <div class="spacer"></div>
+        ${isAdmin ? `<button class="btn primary" onclick="openSetupForm('${key}')">+ Tambah ${title}</button>` : ''}
+    </div>
+    <div class="table-wrap"><table class="data">
+        <thead><tr>${cols.map(c => `<th>${c.toUpperCase()}</th>`).join('')}<th>Tindakan</th></tr></thead>
+        <tbody>
+        ${list.map(item => `<tr>
+            ${cols.map(c => `<td>${esc(item[c]) || '-'}</td>`).join('')}
+            <td class="cell-actions">
+                ${isAdmin ? `<button class="btn sm" onclick="openSetupForm('${key}', '${item.id}')">Edit</button>` : '-'}
+            </td>
+        </tr>`).join('')}
+        ${list.length===0 ? `<tr><td colspan="${cols.length+1}" class="empty">Tiada rekod.</td></tr>` : ''}
+        </tbody>
+    </table></div>
+    `;
+}
+
+function bindSetupEvents() {} // Handled inline
+
+// --- LIFECYCLE MODULES ---
+function renderLifecycleModule(key, title, cols) {
+    const list = STATE[key];
+    const isAdmin = STATE.profile && STATE.profile.role === 'ADMIN';
+    
+    return `
+    <div class="toolbar">
+        <div class="spacer"></div>
+        ${isAdmin ? `<button class="btn primary" onclick="openLifecycleForm('${key}')">+ Rekod ${title}</button>` : ''}
+    </div>
+    <div class="table-wrap"><table class="data">
+        <thead><tr>${cols.map(c => `<th>${c.replace(/_/g, ' ').toUpperCase()}</th>`).join('')}<th>Tindakan</th></tr></thead>
+        <tbody>
+        ${list.map(item => `<tr>
+            ${cols.map(c => {
+                if(c==='asset_id') return `<td class="small">${assetLabel(STATE.assets.find(a=>a.id===item[c]))}</td>`;
+                if(c.includes('date')) return `<td class="small">${fmtDate(item[c])}</td>`;
+                if(c==='status') return `<td><span class="${badgeClass(item[c])}">${esc(item[c])}</span></td>`;
+                if(c==='borrower_id') return `<td>${esc(personnelLabel(item[c]))}</td>`;
+                return `<td>${esc(item[c]) || '-'}</td>`;
+            }).join('')}
+            <td class="cell-actions">
+                <button class="btn sm" onclick="openLifecycleDetail('${key}', '${item.id}')">Lihat</button>
+                ${isAdmin ? `<button class="btn sm" onclick="openLifecycleForm('${key}', '${item.id}')">Edit</button>` : ''}
+            </td>
+        </tr>`).join('')}
+        ${list.length===0 ? `<tr><td colspan="${cols.length+1}" class="empty">Tiada rekod.</td></tr>` : ''}
+        </tbody>
+    </table></div>
+    `;
+}
+function bindLifecycleEvents() {}
+
+// --- AUDIT TRAIL ---
+function renderAudit(){
+    if(!isAdmin()) return `<div class="empty">Akses Ditolak.</div>`;
+    return `
+    <div class="panel bg-yellow-50" style="background: #FFF9E6; border-color: #F6E09E;">
+        <p class="small">Jejak audit ini dijana secara automatik oleh pangkalan data (PostgreSQL Trigger) dan tidak boleh dipadam atau diubah suai dari antaramuka ini demi integriti data.</p>
+    </div>
+    <div class="table-wrap"><table class="data">
+        <thead><tr><th>Masa</th><th>Pelaku</th><th>Tindakan</th><th>Jadual</th><th>ID Rekod</th></tr></thead>
+        <tbody>
+        ${STATE.auditLogs.map(l => `<tr>
+            <td class="small font-mono text-muted">${new Date(l.created_at).toLocaleString('ms-MY')}</td>
+            <td class="small">${esc(l.user_email)}</td>
+            <td class="small font-bold">${esc(l.action)}</td>
+            <td class="small">${esc(l.table_name)}</td>
+            <td class="small font-mono text-muted" title="${l.record_id}">${(l.record_id||'').substring(0,8)}...</td>
+        </tr>`).join('')}
+        ${STATE.auditLogs.length===0 ? '<tr><td colspan="5" class="empty">Tiada log setakat ini.</td></tr>' : ''}
+        </tbody>
+    </table></div>
+    `;
+}
+
+// --- MODALS & FORMS ---
+function closeModal(){ STATE.modal = null; render(); }
+
+// 1. Asset Profile Detail
+function openAssetProfile(id) { STATE.modal = { type: 'assetProfile', id }; render(); }
+function renderAssetProfileModal() {
+    const a = STATE.assets.find(x => x.id === STATE.modal.id);
+    if(!a) return '';
+    
+    // Get related records
+    const maint = STATE.maintenance.filter(m => m.asset_id === a.id);
+    const dmg = STATE.damage.filter(d => d.asset_id === a.id);
+    const mov = STATE.movements.filter(m => m.asset_id === a.id);
+    
+    return `
+    <div class="modal wide">
+        <div class="modal-head"><h3>Profil Aset</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body">
+            <div style="display:flex; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 300px;">
+                    <dl class="dl">
+                        <dt>No. Siri</dt><dd class="font-mono">${esc(a.no_siri) || '-'}</dd>
+                        <dt>Nama</dt><dd>${esc(a.nama)}</dd>
+                        <dt>Status</dt><dd><span class="${badgeClass(a.status)}">${esc(a.status)}</span></dd>
+                        <dt>Kategori</dt><dd>${esc(a.kategori_id) || '-'}</dd>
+                        <dt>Lokasi Semasa</dt><dd>${esc(a.lokasi_id) || '-'}</dd>
+                        <dt>Kod Penempatan</dt><dd>${esc(a.kod_penempatan) || '-'}</dd>
+                        <dt>Pemegang (PIC)</dt><dd>${esc(personnelLabel(a.pic_id))}</dd>
+                        <dt>Catatan</dt><dd>${esc(a.catatan) || '-'}</dd>
+                    </dl>
+                </div>
+                <div class="qr-container">
+                    <canvas id="qrCodeCanvas"></canvas>
+                    <div class="small muted mt-2">Imbas untuk Profil</div>
+                </div>
             </div>
-            <form id="loginForm" class="space-y-4">
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">E-mel Berdaftar</label>
-                    <input type="email" id="loginEmail" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-navy-800 outline-none" required placeholder="admin@vri.gov.my">
+            
+            <div class="section-title">Rekod Penyelenggaraan (${maint.length})</div>
+            <div class="table-wrap mb-4"><table class="data">
+                <thead><tr><th>Tarikh</th><th>Jenis</th><th>Status</th></tr></thead>
+                <tbody>${maint.map(m=>`<tr><td>${fmtDate(m.start_date)}</td><td>${esc(m.jenis)}</td><td>${esc(m.status)}</td></tr>`).join('')}
+                ${maint.length===0?'<tr><td colspan="3" class="empty">Tiada rekod</td></tr>':''}</tbody>
+            </table></div>
+
+            <div class="section-title">Rekod Kerosakan (${dmg.length})</div>
+            <div class="table-wrap mb-4"><table class="data">
+                <thead><tr><th>Tarikh</th><th>Jenis Kerosakan</th><th>Status</th></tr></thead>
+                <tbody>${dmg.map(d=>`<tr><td>${fmtDate(d.report_date)}</td><td>${esc(d.damage_type)}</td><td>${esc(d.status)}</td></tr>`).join('')}
+                ${dmg.length===0?'<tr><td colspan="3" class="empty">Tiada rekod</td></tr>':''}</tbody>
+            </table></div>
+            
+            <div class="section-title">Sejarah Pergerakan (${mov.length})</div>
+            <div class="table-wrap"><table class="data">
+                <thead><tr><th>Tarikh</th><th>Lokasi Baharu</th><th>Peminjam</th></tr></thead>
+                <tbody>${mov.map(m=>`<tr><td>${fmtDate(m.created_at)}</td><td>${esc(m.new_location)}</td><td>${personnelLabel(m.borrower_id)}</td></tr>`).join('')}
+                ${mov.length===0?'<tr><td colspan="3" class="empty">Tiada rekod</td></tr>':''}</tbody>
+            </table></div>
+        </div>
+        <div class="modal-foot">
+            <button class="btn primary" onclick="closeModal()">Tutup</button>
+        </div>
+    </div>
+    `;
+}
+
+// 2. Asset Form
+function openAssetForm(id = null) { STATE.modal = { type: 'assetForm', id }; render(); }
+function renderAssetFormModal() {
+    const a = STATE.modal.id ? STATE.assets.find(x => x.id === STATE.modal.id) : {};
+    
+    return `
+    <div class="modal wide">
+        <div class="modal-head"><h3>${a.id ? 'Kemaskini' : 'Daftar'} Aset</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body">
+            <form id="assetDataForm" onsubmit="event.preventDefault(); saveAsset();">
+                <div class="form-grid">
+                    <div class="field span2"><label>Nama Aset <span class="req">*</span></label>
+                        <input type="text" id="f_nama" value="${esc(a.nama)}" required></div>
+                    
+                    <div class="field"><label>No. Siri</label>
+                        <input type="text" id="f_nosiri" value="${esc(a.no_siri)}"></div>
+                    
+                    <div class="field"><label>Status <span class="req">*</span></label>
+                        <select id="f_status" required>
+                            ${STATUS_LIST.map(s=>`<option value="${s}" ${a.status===s?'selected':''}>${s}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="field"><label>Kategori</label>
+                        <select id="f_kategori">
+                            <option value="">-- Pilih --</option>
+                            ${STATE.categories.map(c=>`<option value="${esc(c.nama)}" ${a.kategori_id===c.nama?'selected':''}>${esc(c.nama)}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="field"><label>Lokasi Semasa</label>
+                        <select id="f_lokasi">
+                            <option value="">-- Pilih --</option>
+                            ${STATE.locations.map(l=>`<option value="${esc(l.nama)}" ${a.lokasi_id===l.nama?'selected':''}>${esc(l.nama)}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="field"><label>Kod Penempatan</label>
+                        <input type="text" id="f_kod_penempatan" value="${esc(a.kod_penempatan)}"></div>
+
+                     <div class="field"><label>Pemegang Aset (PIC)</label>
+                        <select id="f_pic">
+                            <option value="">-- Pilih --</option>
+                            ${STATE.personnel.map(p=>`<option value="${esc(p.id)}" ${a.pic_id===p.id?'selected':''}>${esc(p.nama)}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="field span2"><label>Catatan</label>
+                        <textarea id="f_catatan">${esc(a.catatan)}</textarea></div>
                 </div>
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 mb-1">Kata Laluan</label>
-                    <input type="password" id="loginPassword" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-navy-800 outline-none" required>
-                </div>
-                <div id="loginError" class="text-red-500 text-sm text-center font-semibold"></div>
-                <button type="submit" id="loginBtn" class="w-full bg-navy-800 hover:bg-navy-700 text-white font-bold py-2 px-4 rounded-lg transition-colors shadow-lg">Log Masuk</button>
             </form>
+        </div>
+        <div class="modal-foot">
+            <button class="btn" onclick="closeModal()">Batal</button>
+            <button class="btn primary" onclick="saveAsset()">Simpan Pangkalan Data</button>
+        </div>
+    </div>
+    `;
+}
+
+async function saveAsset() {
+    if(!requireAdmin()) return;
+    const payload = {
+        nama: document.getElementById('f_nama').value,
+        no_siri: document.getElementById('f_nosiri').value,
+        status: document.getElementById('f_status').value,
+        kategori_id: document.getElementById('f_kategori').value || null,
+        lokasi_id: document.getElementById('f_lokasi').value || null,
+        kod_penempatan: document.getElementById('f_kod_penempatan').value,
+        pic_id: document.getElementById('f_pic').value || null,
+        catatan: document.getElementById('f_catatan').value,
+        updated_at: new Date().toISOString()
+    };
+
+    try {
+        if (STATE.modal.id) {
+            const { error } = await supabaseClient.from('assets').update(payload).eq('id', STATE.modal.id);
+            if(error) throw error;
+            toast("Aset dikemaskini.");
+        } else {
+            const { error } = await supabaseClient.from('assets').insert([payload]);
+            if(error) throw error;
+            toast("Aset berjaya didaftarkan.");
+        }
+        closeModal();
+        await loadAllData();
+        render();
+    } catch(e) {
+        toast(e.message, 'err');
+    }
+}
+
+// 3. Setup Form (Locations, Categories, Personnel)
+function openSetupForm(table, id = null) { STATE.modal = { type: 'setupForm', table, id }; render(); }
+function renderSetupFormModal() {
+    const table = STATE.modal.table;
+    const rec = STATE.modal.id ? STATE[table].find(x => x.id === STATE.modal.id) : {};
+    
+    let fieldsHtml = '';
+    if(table === 'locations') {
+        fieldsHtml = `
+            <div class="field"><label>Nama Lokasi <span class="req">*</span></label><input type="text" id="s_nama" value="${esc(rec.nama)}" required></div>
+            <div class="field"><label>Kod Penempatan</label><input type="text" id="s_kod" value="${esc(rec.kod)}"></div>
+        `;
+    } else if(table === 'categories') {
+        fieldsHtml = `<div class="field"><label>Nama Kategori <span class="req">*</span></label><input type="text" id="s_nama" value="${esc(rec.nama)}" required></div>`;
+    } else if(table === 'personnel') {
+        fieldsHtml = `
+            <div class="field"><label>Nama Pegawai <span class="req">*</span></label><input type="text" id="s_nama" value="${esc(rec.nama)}" required></div>
+            <div class="field"><label>Jawatan</label><input type="text" id="s_jawatan" value="${esc(rec.jawatan)}"></div>
+            <div class="field"><label>Seksyen</label><input type="text" id="s_seksyen" value="${esc(rec.seksyen) || 'Biokimia'}"></div>
+        `;
+    }
+
+    return `
+    <div class="modal">
+        <div class="modal-head"><h3 class="capitalize">${STATE.modal.id ? 'Kemaskini' : 'Tambah'} Tetapan</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body"><form id="setupForm" onsubmit="event.preventDefault(); saveSetup();"><div class="form-grid single">${fieldsHtml}</div></form></div>
+        <div class="modal-foot"><button class="btn" onclick="closeModal()">Batal</button><button class="btn primary" onclick="saveSetup()">Simpan</button></div>
+    </div>`;
+}
+
+async function saveSetup() {
+    if(!requireAdmin()) return;
+    const table = STATE.modal.table;
+    const payload = { nama: document.getElementById('s_nama').value };
+    if(table === 'locations') payload.kod = document.getElementById('s_kod').value;
+    if(table === 'personnel') {
+        payload.jawatan = document.getElementById('s_jawatan').value;
+        payload.seksyen = document.getElementById('s_seksyen').value;
+    }
+
+    try {
+        if (STATE.modal.id) {
+            const { error } = await supabaseClient.from(table).update(payload).eq('id', STATE.modal.id);
+            if(error) throw error;
+        } else {
+            const { error } = await supabaseClient.from(table).insert([payload]);
+            if(error) throw error;
+        }
+        toast("Tetapan disimpan.");
+        closeModal();
+        await loadAllData();
+        render();
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+// 4. Lifecycle Forms (Maintenance, Damage, Movement)
+function openLifecycleForm(table, id = null) { STATE.modal = { type: 'lifecycleForm', table, id }; render(); }
+function renderLifecycleFormModal() {
+    const table = STATE.modal.table;
+    const rec = STATE.modal.id ? STATE[table].find(x => x.id === STATE.modal.id) : {};
+    
+    const assetOpts = STATE.assets.map(a => `<option value="${a.id}" ${rec.asset_id===a.id?'selected':''}>${assetLabel(a)}</option>`).join('');
+    const picOpts = STATE.personnel.map(p => `<option value="${p.id}" ${rec.borrower_id===p.id?'selected':''}>${esc(p.nama)}</option>`).join('');
+    
+    let fieldsHtml = `<div class="field span2"><label>Pilih Aset <span class="req">*</span></label><select id="l_asset" required><option value="">-- Pilih Aset --</option>${assetOpts}</select></div>`;
+    
+    if (table === 'maintenance') {
+        fieldsHtml += `
+            <div class="field"><label>Jenis Selenggara</label><input type="text" id="l_jenis" value="${esc(rec.jenis)}" required></div>
+            <div class="field"><label>Status</label><select id="l_status"><option value="Dijadualkan" ${rec.status==='Dijadualkan'?'selected':''}>Dijadualkan</option><option value="Selesai" ${rec.status==='Selesai'?'selected':''}>Selesai</option></select></div>
+            <div class="field"><label>Tarikh Mula</label><input type="date" id="l_date" value="${esc(rec.start_date)}"></div>
+            <div class="field"><label>Kos (RM)</label><input type="number" step="0.01" id="l_cost" value="${rec.cost||''}"></div>
+            <div class="field span2"><label>Penyedia / Syarikat</label><input type="text" id="l_provider" value="${esc(rec.provider)}"></div>
+        `;
+    } else if (table === 'damage') {
+         fieldsHtml += `
+            <div class="field"><label>Jenis Kerosakan</label><input type="text" id="l_type" value="${esc(rec.damage_type)}" required></div>
+            <div class="field"><label>Status</label><select id="l_status">${DAMAGE_FLOW.map(s=>`<option value="${s}" ${rec.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+            <div class="field"><label>Tarikh Lapor</label><input type="date" id="l_date" value="${esc(rec.report_date) || todayISO()}"></div>
+            <div class="field span2"><label>Penerangan Terperinci</label><textarea id="l_details">${esc(rec.details)}</textarea></div>
+        `;
+    } else if (table === 'movements') {
+         fieldsHtml += `
+            <div class="field"><label>Peminjam / Penerima Baru <span class="req">*</span></label><select id="l_pic" required><option value="">-- Pilih --</option>${picOpts}</select></div>
+            <div class="field"><label>Lokasi Baru <span class="req">*</span></label><input type="text" id="l_loc" value="${esc(rec.new_location)}" required></div>
+            <div class="field"><label>Status</label><select id="l_status">${MOVEMENT_FLOW.map(s=>`<option value="${s}" ${rec.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+            <div class="field span2"><label>Tujuan</label><textarea id="l_purpose">${esc(rec.purpose)}</textarea></div>
+        `;
+    }
+
+    return `
+    <div class="modal wide">
+        <div class="modal-head"><h3 class="capitalize">${STATE.modal.id ? 'Kemaskini' : 'Tambah'} Rekod</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body"><form id="lcForm" onsubmit="event.preventDefault(); saveLifecycle();"><div class="form-grid">${fieldsHtml}</div></form></div>
+        <div class="modal-foot"><button class="btn" onclick="closeModal()">Batal</button><button class="btn primary" onclick="saveLifecycle()">Simpan</button></div>
+    </div>`;
+}
+
+async function saveLifecycle() {
+    if(!requireAdmin()) return;
+    const table = STATE.modal.table;
+    const payload = { asset_id: document.getElementById('l_asset').value };
+    
+    if(!payload.asset_id) { toast("Sila pilih aset", "err"); return; }
+
+    if (table === 'maintenance') {
+        payload.jenis = document.getElementById('l_jenis').value;
+        payload.status = document.getElementById('l_status').value;
+        payload.start_date = document.getElementById('l_date').value || null;
+        payload.cost = document.getElementById('l_cost').value || 0;
+        payload.provider = document.getElementById('l_provider').value;
+    } else if (table === 'damage') {
+        payload.damage_type = document.getElementById('l_type').value;
+        payload.status = document.getElementById('l_status').value;
+        payload.report_date = document.getElementById('l_date').value || null;
+        payload.details = document.getElementById('l_details').value;
+    } else if (table === 'movements') {
+        payload.borrower_id = document.getElementById('l_pic').value;
+        payload.new_location = document.getElementById('l_loc').value;
+        payload.status = document.getElementById('l_status').value;
+        payload.purpose = document.getElementById('l_purpose').value;
+    }
+
+    try {
+        if (STATE.modal.id) {
+            const { error } = await supabaseClient.from(table).update(payload).eq('id', STATE.modal.id);
+            if(error) throw error;
+        } else {
+            const { error } = await supabaseClient.from(table).insert([payload]);
+            if(error) throw error;
+        }
+        toast("Rekod disimpan.");
+        closeModal();
+        await loadAllData();
+        render();
+    } catch(e) { toast(e.message, 'err'); }
+}
+
+function openLifecycleDetail(table, id) { STATE.modal = { type: 'lifecycleDetail', table, id }; render(); }
+function renderLifecycleDetailModal() {
+    const table = STATE.modal.table;
+    const rec = STATE[table].find(x => x.id === STATE.modal.id);
+    const asset = STATE.assets.find(a => a.id === rec.asset_id);
+    
+    let html = `<div class="small muted mb-4">Aset Terlibat: <b>${assetLabel(asset)}</b></div><dl class="dl">`;
+    
+    if (table === 'maintenance') {
+        html += `<dt>Jenis</dt><dd>${esc(rec.jenis)}</dd><dt>Status</dt><dd>${esc(rec.status)}</dd><dt>Tarikh Mula</dt><dd>${fmtDate(rec.start_date)}</dd><dt>Kos</dt><dd>RM ${rec.cost}</dd><dt>Penyedia</dt><dd>${esc(rec.provider)}</dd>`;
+    } else if (table === 'damage') {
+        html += `<dt>Jenis Kerosakan</dt><dd>${esc(rec.damage_type)}</dd><dt>Status Semasa</dt><dd>${esc(rec.status)}</dd><dt>Tarikh Lapor</dt><dd>${fmtDate(rec.report_date)}</dd><dt>Penerangan</dt><dd>${esc(rec.details)}</dd>`;
+    } else if (table === 'movements') {
+         html += `<dt>Peminjam</dt><dd>${esc(personnelLabel(rec.borrower_id))}</dd><dt>Lokasi Baru</dt><dd>${esc(rec.new_location)}</dd><dt>Status</dt><dd>${esc(rec.status)}</dd><dt>Tujuan</dt><dd>${esc(rec.purpose)}</dd>`;
+    }
+
+    html += `</dl>`;
+
+    return `
+    <div class="modal">
+        <div class="modal-head"><h3 class="capitalize">Butiran Rekod</h3><button class="modal-close" onclick="closeModal()">&times;</button></div>
+        <div class="modal-body">${html}</div>
+        <div class="modal-foot">
+            ${isAdmin() ? `<button class="btn" onclick="openLifecycleForm('${table}', '${rec.id}')">Edit Rekod</button>` : ''}
+            <button class="btn primary" onclick="closeModal()">Tutup</button>
         </div>
     </div>`;
 }
 
-function navigate(view) {
-    STATE.view = view;
-    renderApp();
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+
+function renderModal(){
+  if(!STATE.modal) return "";
+  let inner = "";
+  if(STATE.modal.type==="assetProfile") inner = renderAssetProfileModal();
+  else if(STATE.modal.type==="assetForm") inner = renderAssetFormModal();
+  else if(STATE.modal.type==="setupForm") inner = renderSetupFormModal();
+  else if(STATE.modal.type==="lifecycleForm") inner = renderLifecycleFormModal();
+  else if(STATE.modal.type==="lifecycleDetail") inner = renderLifecycleDetailModal();
+  
+  // Setup QR code after render if needed
+  setTimeout(() => {
+     if(STATE.modal && STATE.modal.type === "assetProfile") {
+         const canvas = document.getElementById('qrCodeCanvas');
+         if(canvas) {
+             const qrText = `${window.location.origin}${window.location.pathname}?asset_id=${STATE.modal.id}`;
+             new QRious({ element: canvas, value: qrText, size: 120, level: 'H' });
+         }
+     }
+  }, 0);
+
+  return `<div class="overlay" id="modalOverlay">${inner}</div>`;
 }
 
-// ==========================================
-// PENGAMBILAN DATA (SUPABASE QUERIES)
-// ==========================================
-async function loadViewData() {
-    const main = document.getElementById('mainContent');
-    try {
-        if (STATE.view === 'dashboard' || STATE.view === 'assets') {
-            // Ambil data aset menggunakan RLS (Hanya yang is_deleted=false)
-            const { data, error } = await supabaseClient.from('assets').select('*').eq('is_deleted', false).order('created_at', { ascending: false });
-            if (error) throw error;
-            STATE.assets = data;
-            
-            if (STATE.view === 'dashboard') main.innerHTML = renderDashboardView();
-            else main.innerHTML = renderAssetsView();
-            
-        } else if (STATE.view === 'audit' && STATE.profile.role === 'ADMIN') {
-            // Ambil jejak audit (Hanya Admin dibenarkan oleh RLS Pangkalan Data)
-            const { data, error } = await supabaseClient.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
-            if (error) throw error;
-            STATE.auditLogs = data;
-            main.innerHTML = renderAuditView();
-        }
-    } catch (err) {
-        main.innerHTML = `<div class="p-4 bg-red-100 text-red-700 rounded-lg font-semibold">Ralat Pangkalan Data: ${err.message}</div>`;
-    }
+function bindModalEvents(){
+  const overlay = document.getElementById("modalOverlay");
+  if(overlay) overlay.onclick = (e)=>{ if(e.target.id==="modalOverlay") closeModal(); };
 }
 
-// ==========================================
-// RENDER MUKA SURAT
-// ==========================================
-function renderDashboardView() {
-    const total = STATE.assets.length;
-    const active = STATE.assets.filter(a => a.status === 'MASIH DIGUNAKAN').length;
-    const broken = STATE.assets.filter(a => a.status === 'ROSAK').length;
-    
-    return `
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 border-l-4 border-l-navy-800">
-                <div class="text-sm font-bold text-gray-500 uppercase tracking-wide">Jumlah Keseluruhan Aset</div>
-                <div class="text-4xl font-bold text-navy-800 mt-2">${total}</div>
-            </div>
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 border-l-4 border-l-emerald-500">
-                <div class="text-sm font-bold text-gray-500 uppercase tracking-wide">Aktif Digunakan</div>
-                <div class="text-4xl font-bold text-emerald-600 mt-2">${active}</div>
-            </div>
-            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 border-l-4 border-l-red-500">
-                <div class="text-sm font-bold text-gray-500 uppercase tracking-wide">Aset Rosak</div>
-                <div class="text-4xl font-bold text-red-600 mt-2">${broken}</div>
-            </div>
-        </div>
-        
-        <div class="bg-blue-50 border border-blue-200 text-blue-800 p-5 rounded-xl text-sm leading-relaxed">
-            <p class="font-bold text-lg mb-1">Status Seni Bina Web</p>
-            <p>Sistem ini sedang beroperasi menggunakan persekitaran <strong>"Serverless"</strong>. Pangkalan data <strong>PostgreSQL</strong> dikendalikan oleh Supabase. Keselamatan dikuatkuasakan di peringkat jadual melalui <em>Row Level Security (RLS)</em>. Sebarang modifikasi data oleh pengguna tanpa status ADMIN akan disekat oleh pangkalan data secara automatik.</p>
-        </div>
-    `;
-}
-
-function renderAssetsView() {
-    return `
-        <div class="flex justify-between items-center mb-6">
-            <input type="text" id="searchAsset" placeholder="Cari nama, no. siri, lokasi..." onkeyup="filterAssets()" class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-1/3 outline-none focus:ring-2 focus:ring-navy-800 shadow-sm text-sm">
-            ${STATE.profile.role === 'ADMIN' ? `<button onclick="openAssetModal()" class="bg-navy-800 hover:bg-navy-700 text-white px-4 py-2 rounded-lg font-semibold shadow transition text-sm whitespace-nowrap ml-4">➕ Daftar Aset</button>` : ''}
-        </div>
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-            <table class="w-full text-sm text-left">
-                <thead class="bg-gray-50 text-gray-600 uppercase text-xs border-b">
-                    <tr>
-                        <th class="p-4 font-bold">No. Siri</th>
-                        <th class="p-4 font-bold">Nama Aset</th>
-                        <th class="p-4 font-bold">Kategori</th>
-                        <th class="p-4 font-bold">Lokasi</th>
-                        <th class="p-4 font-bold">Status</th>
-                        <th class="p-4 font-bold text-center">Tindakan</th>
-                    </tr>
-                </thead>
-                <tbody id="assetTableBody" class="divide-y divide-gray-100">
-                    ${generateAssetRows(STATE.assets)}
-                </tbody>
-            </table>
-        </div>
-    `;
-}
-
-function generateAssetRows(assets) {
-    if(assets.length === 0) return `<tr><td colspan="6" class="p-8 text-center text-gray-500">Tiada aset direkodkan.</td></tr>`;
-    return assets.map(a => `
-        <tr class="hover:bg-gray-50 transition-colors">
-            <td class="p-4 font-mono text-xs text-gray-600">${esc(a.no_siri) || '-'}</td>
-            <td class="p-4 font-medium text-gray-800">${esc(a.nama)}</td>
-            <td class="p-4 text-gray-600 text-xs">${esc(a.kategori)}</td>
-            <td class="p-4 text-gray-600 text-xs">${esc(a.lokasi)}</td>
-            <td class="p-4">
-                <span class="px-2 py-1 text-[10px] uppercase font-bold rounded-full border 
-                    ${a.status === 'MASIH DIGUNAKAN' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
-                      a.status === 'ROSAK' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-gray-100 text-gray-700 border-gray-300'}">
-                    ${esc(a.status)}
-                </span>
-            </td>
-            <td class="p-4 text-center space-x-3">
-                <button onclick="viewAssetDetails('${a.id}')" class="text-navy-700 hover:text-navy-900 font-bold text-xs uppercase underline">Profil</button>
-                ${STATE.profile.role === 'ADMIN' ? `<button onclick="openAssetModal('${a.id}')" class="text-orange-600 hover:text-orange-800 font-bold text-xs uppercase underline">Edit</button>` : ''}
-            </td>
-        </tr>
-    `).join('');
-}
-
-function filterAssets() {
-    const q = document.getElementById('searchAsset').value.toLowerCase();
-    const filtered = STATE.assets.filter(a => 
-        (a.nama && a.nama.toLowerCase().includes(q)) || 
-        (a.no_siri && a.no_siri.toLowerCase().includes(q)) ||
-        (a.lokasi && a.lokasi.toLowerCase().includes(q))
-    );
-    document.getElementById('assetTableBody').innerHTML = generateAssetRows(filtered);
-}
-
-function renderAuditView() {
-    return `
-        <div class="bg-yellow-50 border border-yellow-200 p-5 rounded-xl mb-6">
-            <p class="text-sm text-yellow-800 font-bold mb-1">Kawasan Log Pangkalan Data Keselamatan Tinggi (Immutable Audit Trail)</p>
-            <p class="text-xs text-yellow-700">Setiap rekod dalam senarai ini dihasilkan secara mandiri oleh <strong>PostgreSQL Trigger</strong> di dalam pelayan Supabase. Pengguna, mahupun pembangun antaramuka ini, tidak mempunyai kebenaran pangkalan data (melalui RLS) untuk memadam atau mengubah mana-mana rekod sejarah di bawah.</p>
-        </div>
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-             <table class="w-full text-sm text-left">
-                    <thead class="bg-navy-900 text-white uppercase text-[10px] tracking-wider">
-                        <tr><th class="p-3">Tarikh & Masa</th><th class="p-3">Pelaku</th><th class="p-3">Tindakan</th><th class="p-3">Jadual Terjejas</th></tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        ${STATE.auditLogs.map(a => `
-                            <tr class="hover:bg-gray-50">
-                                <td class="p-3 whitespace-nowrap text-xs font-mono text-gray-500">${new Date(a.created_at).toLocaleString('ms-MY')}</td>
-                                <td class="p-3 font-medium text-navy-800 text-xs">${esc(a.user_email)}</td>
-                                <td class="p-3">
-                                    <span class="px-2 py-1 bg-gray-200 rounded text-[10px] font-bold ${a.action.includes('DELETE')?'bg-red-100 text-red-800':a.action==='CREATE'?'bg-emerald-100 text-emerald-800':'bg-blue-100 text-blue-800'}">${esc(a.action)}</span>
-                                </td>
-                                <td class="p-3 text-xs uppercase tracking-wide text-gray-500 font-mono">${esc(a.table_name)}<br><span class="text-[9px] text-gray-400">ID: ${a.record_id}</span></td>
-                            </tr>
-                        `).join('')}
-                        ${STATE.auditLogs.length === 0 ? `<tr><td colspan="4" class="p-6 text-center text-gray-500">Tiada log setakat ini.</td></tr>` : ''}
-                    </tbody>
-                </table>
-        </div>
-    `;
-}
-
-// ==========================================
-// MODAL & CRUD ASET KEPADA SUPABASE
-// ==========================================
-function closeModals() {
-    const mc = document.getElementById('modalContainer');
-    mc.innerHTML = '';
-    mc.classList.add('hidden');
-}
-
-function viewAssetDetails(id) {
-    const a = STATE.assets.find(x => x.id === id);
-    if (!a) return;
-
-    const modalHTML = `
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden fade-in">
-            <div class="px-6 py-4 border-b flex justify-between items-center bg-navy-50">
-                <h3 class="font-bold text-lg text-navy-800">Profil Aset</h3>
-                <button onclick="closeModals()" class="text-gray-500 hover:text-red-500 text-2xl leading-none">&times;</button>
-            </div>
-            <div class="p-6 flex flex-col md:flex-row gap-6">
-                <div class="flex-1 space-y-4 text-sm">
-                    <div><span class="text-gray-400 block text-[10px] uppercase font-bold">Nama Aset</span><span class="font-semibold text-gray-900">${esc(a.nama)}</span></div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div><span class="text-gray-400 block text-[10px] uppercase font-bold">No. Siri</span><span class="font-mono text-gray-800 text-xs">${esc(a.no_siri) || '-'}</span></div>
-                        <div><span class="text-gray-400 block text-[10px] uppercase font-bold">Status Semasa</span><span class="font-bold text-navy-800">${esc(a.status)}</span></div>
-                        <div><span class="text-gray-400 block text-[10px] uppercase font-bold">Kategori</span><span class="text-gray-800">${esc(a.kategori) || '-'}</span></div>
-                        <div><span class="text-gray-400 block text-[10px] uppercase font-bold">Lokasi</span><span class="text-gray-800">${esc(a.lokasi) || '-'}</span></div>
-                    </div>
-                    <div><span class="text-gray-400 block text-[10px] uppercase font-bold">Catatan</span><span class="text-gray-600 bg-gray-50 p-2 block rounded border">${esc(a.catatan) || 'Tiada catatan'}</span></div>
-                </div>
-                <div class="w-48 flex flex-col items-center justify-center bg-gray-50 border border-gray-200 rounded-xl p-4 shadow-inner">
-                    <canvas id="qrCodeCanvas" class="mb-3"></canvas>
-                    <span class="text-[10px] uppercase tracking-wider text-center text-gray-500 font-bold">Imbas untuk Profil</span>
-                </div>
-            </div>
-            <div class="px-6 py-3 bg-gray-50 border-t flex justify-end">
-                <button onclick="closeModals()" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 px-5 py-2 rounded-lg font-semibold text-sm transition shadow-sm">Tutup Profil</button>
-            </div>
-        </div>
-    `;
-    
-    const mc = document.getElementById('modalContainer');
-    mc.innerHTML = modalHTML;
-    mc.classList.remove('hidden');
-
-    const qrText = `${window.location.origin}/profil-aset.html?id=${a.id}`;
-    new QRious({ element: document.getElementById('qrCodeCanvas'), value: qrText, size: 150, level: 'H' });
-}
-
-function openAssetModal(id = null) {
-    const a = id ? STATE.assets.find(x => x.id === id) : {};
-    
-    const modalHTML = `
-        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden fade-in">
-            <div class="px-6 py-4 border-b flex justify-between items-center bg-navy-50">
-                <h3 class="font-bold text-lg text-navy-800">${id ? 'Kemaskini Maklumat Aset' : 'Daftar Aset Baharu'}</h3>
-                <button onclick="closeModals()" class="text-gray-500 hover:text-red-500 text-2xl leading-none">&times;</button>
-            </div>
-            <form id="assetDataForm" class="p-6 space-y-4 text-sm bg-gray-50/50">
-                <div class="grid grid-cols-2 gap-5">
-                    <div class="col-span-2">
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">Nama Aset <span class="text-red-500">*</span></label>
-                        <input type="text" id="f_nama" value="${esc(a.nama)}" required class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">No Siri Pendaftaran</label>
-                        <input type="text" id="f_noSiri" value="${esc(a.no_siri)}" class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm font-mono text-xs">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">Status Aset <span class="text-red-500">*</span></label>
-                        <select id="f_status" class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm">
-                            <option value="MASIH DIGUNAKAN" ${a.status==='MASIH DIGUNAKAN'?'selected':''}>MASIH DIGUNAKAN</option>
-                            <option value="ROSAK" ${a.status==='ROSAK'?'selected':''}>ROSAK</option>
-                            <option value="CADANG LUPUS" ${a.status==='CADANG LUPUS'?'selected':''}>CADANG LUPUS</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">Kategori</label>
-                        <input type="text" id="f_kategori" value="${esc(a.kategori)}" class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm">
-                    </div>
-                    <div>
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">Lokasi</label>
-                        <input type="text" id="f_lokasi" value="${esc(a.lokasi)}" class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm">
-                    </div>
-                    <div class="col-span-2">
-                        <label class="block font-bold text-gray-700 mb-1 text-xs uppercase tracking-wide">Catatan Tambahan</label>
-                        <textarea id="f_catatan" rows="3" class="w-full border-gray-300 border rounded-lg p-2.5 focus:ring-2 focus:ring-navy-800 outline-none shadow-sm">${esc(a.catatan)}</textarea>
-                    </div>
-                </div>
-                <div class="pt-5 border-t flex justify-end gap-3 mt-6">
-                    ${id ? `<button type="button" onclick="deleteAsset('${id}')" class="bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 px-5 py-2 rounded-lg font-bold transition mr-auto shadow-sm">Padam/Lupus</button>` : ''}
-                    <button type="button" onclick="closeModals()" class="bg-white border border-gray-300 hover:bg-gray-100 text-gray-800 px-5 py-2 rounded-lg font-bold transition shadow-sm">Batal</button>
-                    <button type="submit" id="btnSimpan" class="bg-navy-800 hover:bg-navy-700 text-white px-6 py-2 rounded-lg font-bold shadow-lg transition">Simpan Rekod DB</button>
-                </div>
-            </form>
-        </div>
-    `;
-    
-    const mc = document.getElementById('modalContainer');
-    mc.innerHTML = modalHTML;
-    mc.classList.remove('hidden');
-
-    document.getElementById('assetDataForm').onsubmit = async (e) => {
-        e.preventDefault();
-        const btn = document.getElementById('btnSimpan');
-        btn.disabled = true; btn.innerText = "Menyimpan...";
-
-        const payload = {
-            nama: document.getElementById('f_nama').value,
-            no_siri: document.getElementById('f_noSiri').value,
-            status: document.getElementById('f_status').value,
-            kategori: document.getElementById('f_kategori').value,
-            lokasi: document.getElementById('f_lokasi').value,
-            catatan: document.getElementById('f_catatan').value,
-            updated_at: new Date().toISOString()
-        };
-
-        try {
-            if (id) {
-                const { error } = await supabaseClient.from('assets').update(payload).eq('id', id);
-                if (error) throw error;
-                toast("Aset berjaya dikemaskini dalam pangkalan data.");
-            } else {
-                const { error } = await supabaseClient.from('assets').insert([payload]);
-                if (error) throw error;
-                toast("Aset baharu berjaya dicipta secara kekal.");
-            }
-            closeModals();
-            loadViewData(); // Muat turun senarai terbaru dari DB
-        } catch(err) {
-            toast(err.message, 'error');
-            btn.disabled = false; btn.innerText = "Simpan Rekod DB";
-        }
-    };
-}
-
-async function deleteAsset(id) {
-    if(!confirm("Anda pasti mahu memadam aset ini? Sistem akan menukar statusnya kepada DILUPUSKAN (Soft Delete) demi integriti sejarah audit pangkalan data.")) return;
-    try {
-        const { error } = await supabaseClient.from('assets').update({ is_deleted: true, status: 'DILUPUSKAN', updated_at: new Date().toISOString() }).eq('id', id);
-        if (error) throw error;
-        toast("Aset berjaya dipadam secara logikal.");
-        closeModals();
-        loadViewData();
-    } catch(err) {
-        toast(err.message, 'error');
-    }
-}
-
-// Buka terus pautan Supabase pada mulanya
-renderApp();
+// Start App
+init();
 </script>
 </body>
 </html>
