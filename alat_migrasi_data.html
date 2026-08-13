@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alat Migrasi Data - Biokimia VRI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .log-box { max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; }
+    </style>
+</head>
+<body class="p-8 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-xl w-full max-w-2xl border border-slate-200">
+        <h1 class="text-2xl font-bold text-slate-800 mb-2">Alat Migrasi Data (Sistem Lama ke Supabase)</h1>
+        <p class="text-sm text-slate-500 mb-6">Alat ini akan memindahkan data JSON dari sistem lama ke pangkalan data Supabase secara automatik.</p>
+
+        <div class="space-y-4">
+            <div><label class="block text-xs font-bold text-slate-700 mb-1">SUPABASE URL</label><input type="text" id="url" placeholder="https://xxxx.supabase.co" class="w-full px-3 py-2 border rounded-lg bg-slate-50"></div>
+            <div><label class="block text-xs font-bold text-slate-700 mb-1">SUPABASE ANON KEY</label><input type="text" id="key" placeholder="sb_publishable_..." class="w-full px-3 py-2 border rounded-lg bg-slate-50"></div>
+            <div class="grid grid-cols-2 gap-4">
+                <div><label class="block text-xs font-bold text-slate-700 mb-1">E-MEL ADMIN</label><input type="email" id="email" placeholder="admin@dvs.gov.my" class="w-full px-3 py-2 border rounded-lg bg-slate-50"></div>
+                <div><label class="block text-xs font-bold text-slate-700 mb-1">KATA LALUAN ADMIN</label><input type="password" id="password" class="w-full px-3 py-2 border rounded-lg bg-slate-50"></div>
+            </div>
+            
+            <button id="startBtn" onclick="startMigration()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 shadow-md transition-all">MULA MIGRASI DATA</button>
+        </div>
+
+        <div id="logArea" class="mt-6 bg-slate-900 text-green-400 p-4 rounded-lg log-box hidden">
+            <div>> Menunggu untuk dimulakan...</div>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // LANGKAH PENTING: TAMPAL 3 DATA DARI FAIL LAMA ANDA DI BAWAH GARISAN INI
+        // Salin const SEED_ASSETS, const SEED_LOCATIONS, dan const SEED_CATEGORIES
+        // ============================================================================
+        
+        const SEED_CATEGORIES = ["ALATAN", "ASET TAK ALIH", "ELEKTRIKAL", "KOMPUTER", "MEKANIKAL", "PERABOT", "PERKAKAS", "PERKAKAS ELEKTRIK", "STOK"];
+        
+        const SEED_LOCATIONS = [{"nama": "BILIK OVEN", "kod": "080311 / BGN / X / 02 / 015"}, {"nama": "BILIK DIGESTION", "kod": "080311 / BGN / X / 02 / 017"}, {"nama": "MAKMAL KUALITI MAKANAN", "kod": "080311 / BGN / X / 02 / 018"}, {"nama": "BILIK PENYIMPANAN BAHAN KIMIA", "kod": "080311 / BGN / X / 02 / 012"}, {"nama": "MAKMAL KIMIA KLINIKAL", "kod": "080311 / BGN / X / 02 / 011"}, {"nama": "MAKMAL PROTEOMIK", "kod": "080311 / BGN / X / 02 / 010"}, {"nama": "BILIK BASUHAN", "kod": "080311 / BGN / X / 02 / 019"}, {"nama": "MAKMAL KUALITI SUSU & TOKSIKOLOGI", "kod": "080311 / BGN / X / 02 / 009"}, {"nama": "BK STAF BIOKIMIA", "kod": "080311 / BGN / X / 02 / 020"}, {"nama": "RUANG LEGAR 2", "kod": "080311 / BGN / X / 02 / 003"}, {"nama": "BILIK PEGAWAI SEKSYEN BIOKIMIA", "kod": "080311 / BGN / X / 02 / 008"}, {"nama": "RUANG LEGAR 4", "kod": "080311 / BGN / X / 02 / 021"}, {"nama": "MAKMAL BIOLOGI MOLEKUL", "kod": "080311 / BGN / X / 02 / 031"}, {"nama": "MAKMAL ANTIGEN & ELISA", "kod": "080311 / BGN / X / 02 / 033"}, {"nama": "MAKMAL KULTURA", "kod": "080311 / BGN / X / 02 / 005"}, {"nama": "BILIK INKUBATOR", "kod": "080311 / BGN / X / 02 / 004"}, {"nama": "BILIK SEJUK", "kod": "080311 / BGN / X / 02 / 034"}, {"nama": "RUANG LEGAR 1", "kod": "080311 / BGN / X / 02 / 002"}, {"nama": "BILIK MESYUARAT", "kod": "080311 / BGN / X / 02 / 035"}, {"nama": "BILIK MESYUARAT BIOKIMIA", "kod": "PERLU DISAHKAN"}, {"nama": "BILIK PANTRY", "kod": "080311 / BGN / X / 02 / 010-B (PERLU DISAHKAN)"}, {"nama": "STOR BANGUNAN BIOLOGIK", "kod": "080311 / BGN / X / 02 / 037"}, {"nama": "BILIK KISAR MAKANAN", "kod": "080311 / BGN / X / 02 / 016"}];
+
+        // TAMPAL const SEED_ASSETS = [...semua 440 data aset...] DI SINI
+        const SEED_ASSETS = [
+            {"id": "A0001", "noSiri": "MOA/JPV/VRI/08-03-01/I/13/43", "nama": "PERALATAN SANITARI / TONG SAMPAH GUNA SAMA STAINLESS STEEL LITTER BIN C/W FLAT TOP", "tarikhPenempatan": "2021-03-10", "lokasi": "RUANG LEGAR 1", "kodPenempatan": "080311 / BGN / X / 02 / 002", "perluSelenggara": "TIDAK", "status": "MASIH DIGUNAKAN", "tarikhSemakan": "2024-11-13", "kategori": "PERKAKAS", "tahunSelenggara": "Tiada Rekod", "catatan": ""}, 
+            {"id": "A0002", "noSiri": "MOA/JPV/VRI/08-03-01/I/08/71", "nama": "PAPAN KENYATAAN /TULIS / WHITEBOARD/PAPAN TULIS\nwhiteboard", "tarikhPenempatan": "2022-03-22", "lokasi": "RUANG LEGAR 2", "kodPenempatan": "080311 / BGN / X / 02 / 003", "perluSelenggara": "TIDAK", "status": "MASIH DIGUNAKAN", "tarikhSemakan": "2024-11-14", "kategori": "PERABOT", "tahunSelenggara": "Tiada Rekod", "catatan": ""}
+            // (Anda perlu salin dan tampal baki 400+ rekod dari fail lama ke dalam kurungan [ ] ini)
+        ];
+
+        // ============================================================================
+
+
+        function log(msg) {
+            const el = document.getElementById('logArea');
+            el.classList.remove('hidden');
+            el.innerHTML += `<div>> ${msg}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function startMigration() {
+            const url = document.getElementById('url').value.trim();
+            const key = document.getElementById('key').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            if(!url || !key || !email || !password) {
+                alert("Sila isikan semua maklumat Supabase dan Log Masuk Admin.");
+                return;
+            }
+
+            if(SEED_ASSETS.length < 5) {
+                if(!confirm("AMARAN: Anda hanya mempunyai beberapa data aset dalam fail ini. Pasti anda telah menampal KESELURUHAN 440+ data SEED_ASSETS dari sistem lama?")) return;
+            }
+
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('startBtn').innerText = "PROSES MIGRASI SEDANG DIJALANKAN...";
+            
+            const supabaseClient = supabase.createClient(url, key);
+            log("Menyambung ke Pangkalan Data...");
+
+            // 1. Log Masuk (Bypass RLS)
+            const { error: authErr } = await supabaseClient.auth.signInWithPassword({ email, password });
+            if (authErr) {
+                log(`<span class="text-red-500">Gagal log masuk: ${authErr.message}</span>`);
+                document.getElementById('startBtn').disabled = false; return;
+            }
+            log("Log masuk Admin berjaya.");
+
+            try {
+                // 2. Import Kategori
+                log(`Memasukkan ${SEED_CATEGORIES.length} Kategori...`);
+                const catPayload = SEED_CATEGORIES.map(c => ({ name: c }));
+                await supabaseClient.from('categories').insert(catPayload);
+                log("Selesai Kategori.");
+
+                // 3. Import Lokasi
+                log(`Memasukkan ${SEED_LOCATIONS.length} Lokasi...`);
+                const locPayload = SEED_LOCATIONS.map(l => ({ name: l.nama, code: l.kod }));
+                await supabaseClient.from('locations').insert(locPayload);
+                log("Selesai Lokasi.");
+
+                // 4. Transformasi & Import Aset
+                log(`Mengumpul format ${SEED_ASSETS.length} Data Aset...`);
+                
+                const assetPayload = SEED_ASSETS.map(a => {
+                    // Simpan data lama yang tiada lajur khas ke dalam "Catatan" supaya sejarah tidak hilang
+                    let nota = `[DATA LAMA]\nTarikh Penempatan: ${a.tarikhPenempatan || '-'}\nKod Penempatan: ${a.kodPenempatan || '-'}\nKeperluan Selenggara: ${a.perluSelenggara || '-'}\nTarikh Semakan: ${a.tarikhSemakan || '-'}\nTahun Selenggara: ${a.tahunSelenggara || '-'}`;
+                    if(a.catatan) nota += `\n\nCatatan Asal:\n${a.catatan}`;
+
+                    // Betulkan format status lama ke standard sistem baharu
+                    let statusBaru = a.status || "MASIH DIGUNAKAN";
+                    if(statusBaru === "LUPUS") statusBaru = "DILUPUSKAN";
+                    if(statusBaru === "ROSAK (MASIH DIGUNAKAN)") statusBaru = "ROSAK";
+
+                    return {
+                        registration_no: a.noSiri || a.id,
+                        name: a.nama,
+                        category: a.kategori,
+                        location: a.lokasi,
+                        status: statusBaru,
+                        notes: nota
+                    };
+                });
+
+                // Supabase membenarkan pukal (bulk insert). Kita hantar sekaligus.
+                log("Memasukkan data Aset ke pangkalan data. Sila tunggu...");
+                const { error: assetErr } = await supabaseClient.from('assets').insert(assetPayload);
+                
+                if(assetErr) throw assetErr;
+
+                log(`<span class="text-blue-400 font-bold">MIGRASI SELESAI DENGAN BERJAYA!</span>`);
+                log("Anda kini boleh menutup fail ini dan buka semula index.html sistem utama.");
+
+                document.getElementById('startBtn').innerText = "MIGRASI SELESAI";
+
+            } catch (err) {
+                log(`<span class="text-red-500">Ralat Semasa Migrasi: ${err.message}</span>`);
+                document.getElementById('startBtn').innerText = "RALAT BERLAKU";
+            }
+        }
+    </script>
+</body>
+</html>
