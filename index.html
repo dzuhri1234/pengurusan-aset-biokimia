@@ -44,7 +44,7 @@
     <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
     <script>
-        // PENTING: GANTIKAN DENGAN KUNCI SUPABASE ANDA SEBELUM DIJALANKAN
+        // Kunci Supabase Biokimia VRI
         const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; 
         const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
 
@@ -165,10 +165,7 @@
                 const promises = tables.map(async (t) => {
                     try {
                         const { data, error } = await supabaseClient.from(t).select('*').order('created_at', { ascending: false });
-                        if (error) {
-                            console.warn(`Ralat muat turun jadual ${t}:`, error.message);
-                            return { data: [] };
-                        }
+                        if (error) return { data: [] };
                         return { data };
                     } catch (err) {
                         return { data: [] };
@@ -186,7 +183,7 @@
                     const { data: users } = await supabaseClient.from('user_profiles').select('*').order('created_at', { ascending: false });
                     if (users) STATE.data.user_profiles = users;
                 }
-            } catch (e) { showToast("Ralat memuat turun beberapa data. Struktur jadual mungkin tidak lengkap.", "warning"); console.error(e); }
+            } catch (e) { showToast("Ralat memuat turun beberapa data.", "warning"); console.error(e); }
         }
 
         async function handleLogin(e) {
@@ -842,8 +839,7 @@
             const canvas = document.getElementById('qrCanvas');
             if (canvas && STATE.modal && STATE.modal.type === 'assetProfile') {
                 const a = STATE.data.assets.find(x => x.id === STATE.modal.id);
-                // Menukar QR Code daripada URL tapak web kepada paparan Teks (Nombor Pendaftaran)
-                // Ini membolehkan anda scan guna kamera bimbit/scanner dan terus copy Nombor Siri
+                // Menukar QR Code supaya memaparkan teks No Pendaftaran Aset
                 const qrText = a ? (a.registration_no || a.id) : STATE.modal.id;
                 new QRious({ element: canvas, value: qrText, size: 180, level: 'H' });
             }
