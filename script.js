@@ -1,0 +1,638 @@
+ <script>
+        // --- KONFIGURASI SUPABASE ---
+        const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; 
+        const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
+        let supabaseClient;
+        let statusChartInstance = null; 
+
+        // --- STATE PENGURUSAN DATA ---
+        const STATE = {
+            user: null, profile: null, view: 'dashboard', loading: true, modal: null, sidebarOpen: false,
+            data: { assets: [], locations: [], categories: [], personnel: [], maintenance: [], damage: [], movements: [], inspections: [], disposals: [], audit_logs: [], user_profiles: [] },
+            filters: { search: '', status: '' }
+        };
+
+        const STATUS_OPTIONS = ["MASIH DIGUNAKAN", "ROSAK", "CADANG LUPUS", "DILUPUSKAN", "DIPINJAM", "DISELENGGARA"];
+
+        // --- FUNGSI BANTUAN (UTILITIES) ---
+        function showToast(msg, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bg = type === 'error' ? 'bg-red-600' : (type === 'warning' ? 'bg-amber-500' : 'bg-green-600');
+            toast.className = `${bg} text-white px-4 py-3 rounded-lg shadow-lg text-sm font-medium transition-all duration-300 transform translate-y-4 opacity-0`;
+            toast.innerHTML = msg;
+            container.appendChild(toast);
+            setTimeout(() => toast.classList.remove('translate-y-4', 'opacity-0'), 10);
+            setTimeout(() => { toast.classList.add('opacity-0', '-translate-y-4'); setTimeout(() => toast.remove(), 300); }, 3500);
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return isNaN(d.getTime()) ? dateStr : d.toLocaleDateString('ms-MY', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        function getBadgeColor(status) {
+            switch((status || '').toUpperCase()) {
+                case 'MASIH DIGUNAKAN': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                case 'ROSAK': return 'bg-red-100 text-red-800 border-red-200';
+                case 'CADANG LUPUS': return 'bg-orange-100 text-orange-800 border-orange-200';
+                case 'DILUPUSKAN': return 'bg-slate-100 text-slate-600 border-slate-200';
+                case 'DIPINJAM': return 'bg-blue-100 text-blue-800 border-blue-200';
+                case 'DISELENGGARA': return 'bg-purple-100 text-purple-800 border-purple-200';
+                case 'SELESAI': case 'BAIK': case 'AKTIF': return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                default: return 'bg-gray-100 text-gray-800 border-gray-200';
+            }
+        }
+
+        function escapeHTML(str) {
+            if (!str) return '';
+            const div = document.createElement('div'); div.innerText = str; return div.innerHTML;
+        }
+
+        function isAdmin() { return STATE.profile && STATE.profile.role === 'ADMIN'; }
+        function checkAdminAction() { if (!isAdmin()) { showToast("Akses Ditolak: Memerlukan peranan Admin.", "error"); return false; } return true; }
+
+        function getEntityName(collection, id) {
+            if (!id) return '-';
+            const item = STATE.data[collection]?.find(x => x.id === id);
+            return item ? (item.nama || item.name || item.registration_no || id) : id;
+        }
+
+        // --- PENTERJEMAH DATA LAMA (PARSER) ---
+        function parseNotesData(notesStr) {
+            let result = { placement_date: '', placement_code: '', maintenance_req: 'TIDAK', maintenance_year: '', real_notes: '' };
+            if (!notesStr) return result;
+
+            // Jika ia sudah berformat JSON
+            try { if (notesStr.trim().startsWith('{')) { return { ...result, ...JSON.parse(notesStr) }; } } catch(e) {}
+
+            // Jika ia teks biasa dari sistem lama
+            let realNotes = [];
+            notesStr.split('\n').forEach(l => {
+                if (l.includes('Tarikh Penempatan:')) result.placement_date = l.split('Tarikh Penempatan:')[1].trim();
+                else if (l.includes('Kod Penempatan:')) result.placement_code = l.split('Kod Penempatan:')[1].trim();
+                else if (l.includes('Keperluan Selenggara:')) result.maintenance_req = l.split('Keperluan Selenggara:')[1].trim();
+                else if (l.includes('Tahun Selenggara:')) result.maintenance_year = l.split('Tahun Selenggara:')[1].trim();
+                else if (l.includes('Tarikh Semakan:')) { /* Abaikan */ }
+                else if (l.includes('[DATA LAMA]')) { /* Abaikan */ }
+                else if (l.trim()) realNotes.push(l);
+            });
+            result.real_notes = realNotes.join('\n').trim();
+            return result;
+        }
+
+        // --- FUNGSI INISIALISASI & AMBIL DATA ---
+        async function initApp() {
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            supabaseClient.auth.onAuthStateChange(async (event, session) => {
+                if (session) {
+                    STATE.user = session.user;
+                    await fetchUserProfile();
+                    await fetchAllData();
+                    STATE.loading = false;
+                    renderApp();
+                } else {
+                    STATE.user = null; STATE.profile = null; STATE.loading = false;
+                    renderApp();
+                }
+            });
+        }
+
+        async function fetchUserProfile() {
+            try {
+                const { data } = await supabaseClient.from('user_profiles').select('*').eq('id', STATE.user.id).single();
+                STATE.profile = data || { role: 'USER', email: STATE.user.email, name: STATE.user.email.split('@')[0] };
+            } catch (e) { STATE.profile = { role: 'USER', email: STATE.user.email }; }
+        }
+
+        async function fetchAllData() {
+            const tables = ['assets', 'movements', 'maintenance', 'damage', 'disposals', 'inspections', 'locations', 'categories', 'personnel'];
+            
+            const promises = tables.map(async (t) => {
+                try {
+                    const { data, error } = await supabaseClient.from(t).select('*').order('created_at', { ascending: false });
+                    if (error) return { data: [] };
+                    return { data };
+                } catch (e) { return { data: [] }; }
+            });
+
+            const results = await Promise.all(promises);
+            tables.forEach((table, index) => { if (results[index] && results[index].data) STATE.data[table] = results[index].data; });
+
+            if (isAdmin()) {
+                try {
+                    const { data: audits } = await supabaseClient.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
+                    if (audits) STATE.data.audit_logs = audits;
+                    const { data: users } = await supabaseClient.from('user_profiles').select('*').order('created_at', { ascending: false });
+                    if (users) STATE.data.user_profiles = users;
+                } catch(e) {}
+            }
+        }
+
+        // --- FUNGSI LOG MASUK ---
+        async function handleLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('loginBtn');
+            btn.innerHTML = `<div class="loader mx-auto border-white"></div>`; btn.disabled = true;
+
+            const { error } = await supabaseClient.auth.signInWithPassword({ 
+                email: document.getElementById('email').value, 
+                password: document.getElementById('password').value 
+            });
+            
+            if (error) {
+                const errDiv = document.getElementById('loginError');
+                errDiv.classList.remove('hidden'); errDiv.innerText = error.message;
+                btn.innerHTML = `Log Masuk`; btn.disabled = false;
+            }
+        }
+
+        // --- RENDER UTAMA ---
+        function renderApp() {
+            const root = document.getElementById('app');
+
+            if (STATE.loading) {
+                root.innerHTML = `<div class="w-full h-full flex flex-col items-center justify-center bg-slate-50"><div class="loader mb-4"></div><p class="text-slate-500 font-medium">Menyambung ke Pangkalan Data...</p></div>`;
+                return;
+            }
+
+            if (!STATE.user) {
+                root.innerHTML = `
+                    <div class="w-full h-full flex items-center justify-center bg-slate-900" style="background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 20px 20px;">
+                        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+                            <div class="bg-primary px-8 py-6 text-white text-center">
+                                <h1 class="text-2xl font-bold tracking-tight">Aset Alih Biokimia</h1>
+                                <p class="text-blue-100 text-sm mt-1">Institut Penyelidikan Veterinar (VRI)</p>
+                            </div>
+                            <div class="p-8">
+                                <form onsubmit="handleLogin(event)" class="flex flex-col gap-4">
+                                    <div id="loginError" class="hidden bg-red-50 text-red-600 text-sm p-3 rounded-lg border border-red-100 text-center font-medium"></div>
+                                    <div><label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">E-mel Kakitangan</label><input type="email" id="email" required class="w-full px-4 py-2.5 bg-slate-50 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary outline-none"></div>
+                                    <div><label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Kata Laluan</label><input type="password" id="password" required class="w-full px-4 py-2.5 bg-slate-50 rounded-lg border border-slate-200 focus:ring-2 focus:ring-primary outline-none"></div>
+                                    <button type="submit" id="loginBtn" class="mt-4 w-full bg-primary hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-md transition-colors">Log Masuk</button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>`;
+                return;
+            }
+
+            root.innerHTML = `
+                <!-- Sidebar Navigasi -->
+                <aside class="${STATE.sidebarOpen ? 'translate-x-0' : '-translate-x-full'} fixed lg:relative z-40 w-64 h-full bg-navy-900 text-slate-300 flex flex-col transition-transform duration-300 lg:translate-x-0 shadow-xl">
+                    <div class="p-5 border-b border-white/10 flex items-center justify-between">
+                        <div><h2 class="text-white font-bold text-lg leading-tight">Biokimia VRI</h2><p class="text-[10px] text-blue-400 uppercase tracking-wider font-semibold">Pengurusan Aset Pintar</p></div>
+                        <button onclick="STATE.sidebarOpen=false; renderApp()" class="lg:hidden text-slate-400 hover:text-white">&times;</button>
+                    </div>
+                    
+                    <div class="flex-1 overflow-y-auto py-4 flex flex-col gap-0.5 custom-scrollbar">
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-1 px-5">Utama</div>
+                        ${navLink('dashboard', 'Papan Pemuka', 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6')}
+                        ${navLink('assets', 'Senarai Aset Penuh', 'M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4')}
+                        
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Kitaran Hayat</div>
+                        ${navLink('movements', 'Pergerakan & Pinjaman', 'M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4')}
+                        ${navLink('maintenance', 'Penyelenggaraan (PM)', 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z')}
+                        ${navLink('damage', 'Laporan Kerosakan', 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z')}
+                        ${navLink('inspections', 'Pemeriksaan Berkala', 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4')}
+                        ${navLink('disposals', 'Pelupusan (PEP)', 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16')}
+                        
+                        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Data Induk & Laporan</div>
+                        ${navLink('locations', 'Lokasi Penempatan', 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z')}
+                        ${navLink('categories', 'Kategori Aset', 'M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z')}
+                        ${navLink('personnel', 'Pemegang (PIC)', 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z')}
+                        ${navLink('reports', 'Jana Laporan CSV', 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z')}
+
+                        ${isAdmin() ? `<div class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 mt-4 px-5">Sistem Admin</div>
+                        ${navLink('users', 'Pengurusan Pengguna', 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z')}
+                        ${navLink('audit_trail', 'Jejak Audit Sistem', 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z')}` : ''}
+                    </div>
+
+                    <!-- Butiran Akaun Semasa -->
+                    <div class="p-4 bg-navy-800 border-t border-white/10 shrink-0">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="w-9 h-9 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm">${(STATE.profile?.name || STATE.user.email).substring(0,2).toUpperCase()}</div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-semibold text-white truncate">${escapeHTML(STATE.profile?.name || STATE.user.email)}</p>
+                                <p class="text-[10px] text-blue-300 font-bold tracking-wider">${STATE.profile?.role || 'USER'}</p>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                <div onclick="STATE.sidebarOpen=false; renderApp()" class="fixed inset-0 bg-slate-900/60 z-30 lg:hidden ${STATE.sidebarOpen ? 'block' : 'hidden'}"></div>
+
+                <!-- Kandungan Utama (Main Content) -->
+                <main class="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+                    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-4 shadow-sm z-10 shrink-0">
+                        <button onclick="STATE.sidebarOpen=true; renderApp()" class="lg:hidden text-slate-500"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"></path></svg></button>
+                        <h1 class="text-lg font-bold text-slate-800">${getViewTitle()}</h1>
+                        <div class="ml-auto flex items-center gap-4">
+                            <span class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full border border-emerald-100"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Pangkalan Data Terhubung</span>
+                            <button onclick="supabaseClient.auth.signOut()" class="text-xs font-bold text-slate-500 hover:text-red-500 transition-colors">Log Keluar</button>
+                        </div>
+                    </header>
+                    <div class="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar"><div class="max-w-7xl mx-auto space-y-6">${renderCurrentView()}</div></div>
+                </main>
+                ${STATE.modal ? renderModal() : ''}
+            `;
+
+            if (STATE.view === 'dashboard') initCharts();
+            if (STATE.modal?.type === 'assetProfile') generateQRCode();
+        }
+
+        function navLink(key, label, svgPath) {
+            return `
+                <button onclick="STATE.view='${key}'; STATE.sidebarOpen=false; renderApp()" class="nav-item ${STATE.view === key ? 'active' : ''} w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left">
+                    <svg class="w-4 h-4 opacity-70 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="${svgPath}"></path></svg>
+                    <span class="truncate">${label}</span>
+                </button>`;
+        }
+
+        function getViewTitle() {
+            const t = { dashboard: 'Papan Pemuka', assets: 'Senarai Aset Penuh', movements: 'Pergerakan & Pinjaman', maintenance: 'Penyelenggaraan Aset', damage: 'Laporan Kerosakan', inspections: 'Pemeriksaan Berkala', disposals: 'Pelupusan Aset', locations: 'Lokasi Penempatan', categories: 'Kategori Aset', personnel: 'Pemegang Aset (PIC)', reports: 'Pusat Laporan & Eksport CSV', users: 'Pengurusan Pengguna', audit_trail: 'Jejak Audit Pangkalan Data' };
+            return t[STATE.view] || 'Sistem Aset';
+        }
+
+        // --- PENGENDALI PAPARAN (VIEWS) ---
+        function renderCurrentView() {
+            switch(STATE.view) {
+                case 'dashboard': return renderDashboard();
+                case 'assets': return renderAssets();
+                case 'locations': return renderSimpleTable('locations', 'Lokasi Penempatan', ['name', 'code']);
+                case 'categories': return renderSimpleTable('categories', 'Kategori Aset', ['name']);
+                case 'personnel': return renderSimpleTable('personnel', 'Pemegang Aset', ['name', 'position', 'department']);
+                case 'reports': return renderReports();
+                case 'users': return renderUsers();
+                case 'audit_trail': return renderAuditTrail();
+                
+                // Transaksi
+                case 'movements': return renderTransactionTable({ title: 'Pergerakan & Pinjaman', collection: 'movements', formModal: 'movementForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Tujuan', render: r => escapeHTML(r.purpose) }, { header: 'Lokasi Baru', render: r => escapeHTML(r.new_location) }, { header: 'Tarikh Keluar', render: r => formatDate(r.out_date) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
+                case 'maintenance': return renderTransactionTable({ title: 'Rekod Penyelenggaraan', collection: 'maintenance', formModal: 'maintenanceForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Jenis Selenggara', render: r => escapeHTML(r.type) }, { header: 'Tarikh Mula', render: r => formatDate(r.start_date) }, { header: 'Kos (RM)', render: r => parseFloat(r.cost||0).toFixed(2) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
+                case 'damage': return renderTransactionTable({ title: 'Laporan Kerosakan', collection: 'damage', formModal: 'damageForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Kerosakan', render: r => escapeHTML(r.damage_type) }, { header: 'Tarikh Lapor', render: r => formatDate(r.report_date) }, { header: 'Keutamaan', render: r => escapeHTML(r.priority) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
+                case 'inspections': return renderTransactionTable({ title: 'Pemeriksaan Berkala', collection: 'inspections', formModal: 'inspectionForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Tarikh', render: r => formatDate(r.inspection_date) }, { header: 'Pemeriksa', render: r => escapeHTML(r.inspector_name) }, { header: 'Keadaan', render: r => escapeHTML(r.condition) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
+                case 'disposals': return renderTransactionTable({ title: 'Cadangan Pelupusan', collection: 'disposals', formModal: 'disposalForm', columns: [ { header: 'Aset', render: r => `<span class="font-medium">${getEntityName('assets', r.asset_id)}</span>` }, { header: 'Sebab', render: r => escapeHTML(r.reason) }, { header: 'Tarikh Cadangan', render: r => formatDate(r.proposal_date) }, { header: 'Kaedah', render: r => escapeHTML(r.method) }, { header: 'Status', render: r => `<span class="px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(r.status)}">${escapeHTML(r.status)}</span>` } ] });
+                
+                default: return '';
+            }
+        }
+
+        // --- SUB-FUNGSI PAPARAN ---
+        function renderDashboard() {
+            const assets = STATE.data.assets.filter(a => !a.is_deleted);
+            const activeCount = assets.filter(a => a.status === 'MASIH DIGUNAKAN').length;
+            const brokenCount = assets.filter(a => a.status?.includes('ROSAK')).length;
+            const dipinjamCount = assets.filter(a => a.status === 'DIPINJAM').length;
+            
+            return `
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><div class="flex justify-between items-start"><div><p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Jumlah Aset</p><p class="text-3xl font-bold text-slate-800">${assets.length}</p></div><div class="p-2 bg-blue-50 text-primary rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"></path></svg></div></div></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-emerald-200 p-5 bg-emerald-50/30"><div class="flex justify-between items-start"><div><p class="text-xs font-bold text-emerald-600 uppercase tracking-wide mb-1">Aktif Digunakan</p><p class="text-3xl font-bold text-emerald-700">${activeCount}</p></div><div class="p-2 bg-emerald-100 text-emerald-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div></div></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-red-200 p-5 bg-red-50/30"><div class="flex justify-between items-start"><div><p class="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">Rosak / Aduan</p><p class="text-3xl font-bold text-red-700">${brokenCount}</p></div><div class="p-2 bg-red-100 text-red-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg></div></div></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-blue-200 p-5 bg-blue-50/30"><div class="flex justify-between items-start"><div><p class="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">Sedang Dipinjam</p><p class="text-3xl font-bold text-blue-700">${dipinjamCount}</p></div><div class="p-2 bg-blue-100 text-blue-600 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></div></div></div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5"><h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide mb-4">Status Aset Keseluruhan</h3><div class="chart-container"><canvas id="statusChart"></canvas></div></div>
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col"><div class="p-4 border-b border-slate-100 flex justify-between items-center"><h3 class="text-sm font-bold text-slate-800 uppercase tracking-wide">Jejak Audit Terkini</h3><button onclick="STATE.view='audit_trail'; renderApp()" class="text-xs text-primary hover:underline">Lihat Semua</button></div><div class="p-0 flex-1 overflow-y-auto max-h-[250px] custom-scrollbar"><ul class="divide-y divide-slate-100">${(STATE.data.audit_logs || []).slice(0,5).map(log => `<li class="p-3 hover:bg-slate-50 flex items-start gap-3"><div class="mt-0.5"><span class="w-2 h-2 rounded-full inline-block ${log.action==='DELETE'?'bg-red-500':(log.action==='UPDATE'?'bg-orange-400':'bg-emerald-500')}"></span></div><div class="flex-1 min-w-0"><p class="text-sm text-slate-800 font-medium truncate">${escapeHTML(log.user_email)} <span class="text-slate-500 font-normal">melakukan</span> ${escapeHTML(log.action)} <span class="text-slate-500 font-normal">pada</span> ${escapeHTML(log.table_name)}</p><p class="text-xs text-slate-400 mt-0.5">${formatDate(log.created_at)}</p></div></li>`).join('') || `<li class="p-4 text-center text-sm text-slate-500">Tiada aktiviti.</li>`}</ul></div></div>
+                </div>
+            `;
+        }
+
+        function initCharts() {
+            const ctx = document.getElementById('statusChart');
+            if (!ctx) return;
+            if (statusChartInstance) statusChartInstance.destroy();
+            const counts = {};
+            STATE.data.assets.filter(a => !a.is_deleted).forEach(a => counts[a.status||'TIDAK DIKETAHUI'] = (counts[a.status||'TIDAK DIKETAHUI'] || 0) + 1);
+            statusChartInstance = new Chart(ctx, { type: 'doughnut', data: { labels: Object.keys(counts), datasets: [{ data: Object.values(counts), backgroundColor: ['#10B981', '#EF4444', '#F59E0B', '#64748B', '#3B82F6', '#8B5CF6'], borderWidth: 2, borderColor: '#ffffff' }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: { size: 11 } } } } } });
+        }
+
+        function renderAssets() {
+            let filtered = STATE.data.assets.filter(a => !a.is_deleted).filter(a => {
+                const s = STATE.filters.search.toLowerCase();
+                return (!s || (a.name||'').toLowerCase().includes(s) || (a.registration_no||'').toLowerCase().includes(s) || (a.location||'').toLowerCase().includes(s)) && (!STATE.filters.status || a.status === STATE.filters.status);
+            });
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between bg-slate-50/50 rounded-t-xl">
+                        <div class="flex flex-1 w-full gap-2">
+                            <div class="relative flex-1 max-w-md"><input type="text" placeholder="Cari nama, lokasi atau no. siri..." value="${escapeHTML(STATE.filters.search)}" oninput="STATE.filters.search=this.value; renderApp(); document.querySelector('input[placeholder]').focus();" class="w-full pl-3 pr-3 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                            <select onchange="STATE.filters.status=this.value; renderApp();" class="py-2 px-3 text-sm border border-slate-300 rounded-lg outline-none bg-white"><option value="">Semua Status</option>${STATUS_OPTIONS.map(s => `<option value="${s}" ${STATE.filters.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select>
+                        </div>
+                        ${isAdmin() ? `<button onclick="STATE.modal={type:'assetForm', id:null}; renderApp();" class="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow-sm transition-colors whitespace-nowrap">+ Daftar Aset</button>` : ''}
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4 pl-6">No. Pendaftaran</th><th class="p-4">Keterangan Aset</th><th class="p-4">Lokasi</th><th class="p-4">Status</th><th class="p-4 text-right pr-6">Tindakan</th></tr></thead>
+                            <tbody class="divide-y divide-slate-100">
+                                ${filtered.map(a => `
+                                    <tr class="hover:bg-slate-50 group">
+                                        <td class="p-4 pl-6 text-sm font-mono font-medium text-slate-800">${escapeHTML(a.registration_no || a.id)}</td>
+                                        <td class="p-4"><p class="text-sm font-semibold text-slate-800 line-clamp-1">${escapeHTML(a.name)}</p><p class="text-xs text-slate-500 mt-0.5">${escapeHTML(a.category || '-')}</p></td>
+                                        <td class="p-4 text-sm text-slate-600">${escapeHTML(a.location || '-')}</td>
+                                        <td class="p-4"><span class="px-2.5 py-1 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)} whitespace-nowrap">${escapeHTML(a.status)}</span></td>
+                                        <td class="p-4 pr-6 text-right space-x-2"><button onclick="STATE.modal={type:'assetProfile', id:'${a.id}'}; renderApp();" class="text-xs font-semibold text-primary hover:underline">Profil</button>${isAdmin() ? `<button onclick="STATE.modal={type:'assetForm', id:'${a.id}'}; renderApp();" class="text-xs font-semibold text-slate-500 hover:text-slate-800">Edit</button>` : ''}</td>
+                                    </tr>`).join('') || `<tr><td colspan="5" class="p-8 text-center text-slate-500 text-sm">Tiada aset dijumpai.</td></tr>`}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        function renderSimpleTable(collection, title, fields) {
+            const data = STATE.data[collection] || [];
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl"><h2 class="font-bold text-slate-800">${title}</h2>${isAdmin() ? `<button onclick="STATE.modal={type:'simpleForm', collection:'${collection}'}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">+ Rekod Baru</button>` : ''}</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">${fields.map(f => `<th class="p-4">${f.toUpperCase()}</th>`).join('')}${isAdmin() ? `<th class="p-4 text-right">Tindakan</th>` : ''}</tr></thead>
+                            <tbody class="divide-y divide-slate-100">${data.length ? data.map(row => `<tr class="hover:bg-slate-50">${fields.map(f => `<td class="p-4 text-sm text-slate-700">${escapeHTML(row[f]) || '-'}</td>`).join('')}${isAdmin() ? `<td class="p-4 text-right"><button onclick="deleteRecord('${collection}', '${row.id}')" class="text-xs text-red-500 hover:underline">Padam</button></td>` : ''}</tr>`).join('') : `<tr><td colspan="${fields.length + 1}" class="p-8 text-center text-slate-500 text-sm">Tiada rekod.</td></tr>`}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        function renderTransactionTable(config) {
+            const data = STATE.data[config.collection] || [];
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col">
+                    <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl"><h2 class="font-bold text-slate-800">${config.title}</h2>${isAdmin() ? `<button onclick="STATE.modal={type:'${config.formModal}', id:null}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">+ Rekod Baru</button>` : ''}</div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider">${config.columns.map(c => `<th class="p-4">${c.header}</th>`).join('')}</tr></thead>
+                            <tbody class="divide-y divide-slate-100">${data.length ? data.map(row => `<tr class="hover:bg-slate-50">${config.columns.map(c => `<td class="p-4 text-sm text-slate-700">${c.render(row)}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${config.columns.length}" class="p-8 text-center text-slate-500 text-sm">Tiada rekod.</td></tr>`}</tbody>
+                        </table>
+                    </div>
+                </div>`;
+        }
+
+        function renderReports() {
+            const reports = [ { id: 'assets', name: 'Senarai Penuh Aset Terkini' }, { id: 'movements', name: 'Laporan Pergerakan & Pinjaman Aset' }, { id: 'maintenance', name: 'Laporan Penyelenggaraan Aset' }, { id: 'damage', name: 'Laporan Kerosakan & Pembaikan' }, { id: 'inspections', name: 'Laporan Pemeriksaan Berkala' }, { id: 'disposals', name: 'Laporan Pelupusan Aset (PEP)' } ];
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                    <h2 class="font-bold text-lg text-slate-800 mb-2">Pusat Laporan & Eksport Data</h2><p class="text-sm text-slate-500 mb-6">Muat turun data pangkalan data terus ke format CSV untuk Excel.</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        ${reports.map(r => `<div class="border border-slate-200 rounded-lg p-4 flex items-center justify-between"><div class="flex items-center gap-3"><div class="p-2 bg-blue-50 text-primary rounded-md"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div><p class="font-semibold text-sm text-slate-700">${r.name}</p></div><button onclick="downloadCSV('${r.id}')" class="text-sm bg-slate-100 hover:bg-slate-200 py-1.5 px-4 rounded font-medium">Muat Turun</button></div>`).join('')}
+                    </div>
+                </div>`;
+        }
+
+        function downloadCSV(collection) {
+            const data = STATE.data[collection];
+            if (!data || data.length === 0) { showToast("Tiada data untuk dieksport.", "warning"); return; }
+            const keys = Object.keys(data[0]).filter(k => k !== 'id' && !k.endsWith('_id'));
+            let csv = keys.join(',') + '\n';
+            data.forEach(row => { csv += keys.map(k => `"${(row[k] === null ? '' : String(row[k])).replace(/"/g, '""')}"`).join(',') + '\n'; });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `Laporan_${collection}_${new Date().getTime()}.csv`;
+            document.body.appendChild(link); link.click(); document.body.removeChild(link);
+            showToast("Laporan CSV berjaya dimuat turun.");
+        }
+
+        function renderUsers() {
+            if(!isAdmin()) return '<div class="p-4 text-red-500 font-bold bg-red-50 border border-red-200 rounded-lg">Akses ditolak: Ruangan Pentadbir Sahaja.</div>';
+            return `
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col"><div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50/50 rounded-t-xl"><div><h2 class="font-bold text-slate-800">Senarai Pengguna Sistem</h2></div><button onclick="STATE.modal={type:'userForm'}; renderApp();" class="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold">+ Tambah Pengguna</button></div>
+                    <table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Nama</th><th class="p-4">E-mel Log Masuk</th><th class="p-4">Peranan</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">${(STATE.data.user_profiles || []).map(u => `<tr class="hover:bg-slate-50"><td class="p-4 text-sm font-medium text-slate-800">${escapeHTML(u.name || '-')}</td><td class="p-4 text-sm font-mono text-slate-600">${escapeHTML(u.email)}</td><td class="p-4"><span class="px-2 py-1 text-[10px] font-bold rounded-md ${u.role==='ADMIN'?'bg-primary text-white':'bg-slate-200 text-slate-700'}">${escapeHTML(u.role)}</span></td></tr>`).join('')}</tbody></table>
+                </div>`;
+        }
+        
+        function renderAuditTrail() {
+            if(!isAdmin()) return '<div class="p-4 text-red-500 font-bold">Akses ditolak.</div>';
+            return `<div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col"><table class="w-full text-left border-collapse"><thead><tr class="bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wider"><th class="p-4">Masa (UTC)</th><th class="p-4">Pengguna</th><th class="p-4">Tindakan</th><th class="p-4">Koleksi</th></tr></thead><tbody class="divide-y divide-slate-100 text-sm">${(STATE.data.audit_logs || []).map(log => `<tr class="hover:bg-slate-50"><td class="p-4 text-slate-500 text-xs font-mono">${log.created_at.replace('T',' ').substring(0,19)}</td><td class="p-4 text-slate-800 font-medium">${escapeHTML(log.user_email)}</td><td class="p-4 font-bold ${log.action === 'DELETE' ? 'text-red-600' : 'text-primary'}">${escapeHTML(log.action)}</td><td class="p-4 text-slate-600 font-mono">${escapeHTML(log.table_name)}</td></tr>`).join('')}</tbody></table></div>`;
+        }
+
+        // --- RENDER MODAL (POPUP BORANG & PROFIL) ---
+        function renderModal() {
+            const m = STATE.modal; let content = ''; let title = '';
+            if (m.type === 'assetProfile') { title = 'Profil Aset Lengkap'; content = modalAssetProfile(m.id); }
+            else if (m.type === 'assetForm') { title = m.id ? 'Kemaskini Maklumat Aset' : 'Pendaftaran Aset Baharu'; content = modalAssetForm(m.id); }
+            else if (m.type === 'simpleForm') { title = 'Borang Data Induk'; content = modalSimpleForm(m.collection); }
+            else if (m.type === 'movementForm') { title = 'Borang Pergerakan / Pinjaman'; content = modalMovementForm(); }
+            else if (m.type === 'maintenanceForm') { title = 'Borang Penyelenggaraan'; content = modalMaintenanceForm(); }
+            else if (m.type === 'damageForm') { title = 'Borang Laporan Kerosakan'; content = modalDamageForm(); }
+            else if (m.type === 'inspectionForm') { title = 'Borang Semakan Berkala'; content = modalInspectionForm(); }
+            else if (m.type === 'disposalForm') { title = 'Borang Cadangan Pelupusan'; content = modalDisposalForm(); }
+            else if (m.type === 'userForm') { title = 'Pendaftaran Pengguna Sistem'; content = modalUserForm(); }
+
+            return `
+                <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm transition-opacity" onclick="if(event.target === this){ STATE.modal=null; renderApp(); }">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-[pulse_0.1s_ease-out]">
+                        <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
+                            <h2 class="text-lg font-bold text-slate-800">${title}</h2>
+                            <button onclick="STATE.modal=null; renderApp();" class="text-slate-400 hover:text-slate-700 bg-slate-200/50 hover:bg-slate-200 rounded-full p-1.5 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
+                        </div>
+                        <div class="p-6 overflow-y-auto custom-scrollbar flex-1">${content}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // FUNGSI PROFIL PENUH ASET
+        function modalAssetProfile(id) {
+            const a = STATE.data.assets.find(x => x.id === id);
+            if(!a) return '<p>Aset tidak dijumpai.</p>';
+            const extra = parseNotesData(a.notes);
+            
+            // Kumpulkan Sejarah
+            const repairs = STATE.data.damage.filter(d => d.asset_id === id) || [];
+            const moves = STATE.data.movements.filter(d => d.asset_id === id) || [];
+            
+            return `
+                <div class="flex flex-col sm:flex-row gap-8">
+                    <div class="flex-1 space-y-6">
+                        <div>
+                            <h1 class="text-xl font-bold text-slate-900 mb-1">${escapeHTML(a.name)}</h1>
+                            <p class="text-sm font-mono font-bold text-primary bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100">${escapeHTML(a.registration_no || a.id)}</p>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm bg-slate-50 p-5 rounded-xl border border-slate-200">
+                            <div class="col-span-2 sm:col-span-3 border-b border-slate-200 pb-2 mb-1"><h3 class="text-xs font-bold text-slate-800 uppercase tracking-widest">Maklumat Utama</h3></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kategori</p><p class="font-medium text-slate-800">${escapeHTML(a.category || '-')}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Lokasi Semasa</p><p class="font-medium text-slate-800">${escapeHTML(a.location || '-')}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Status Terkini</p><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded border ${getBadgeColor(a.status)}">${escapeHTML(a.status)}</span></div>
+                            
+                            <div class="col-span-2 sm:col-span-3 border-b border-slate-200 pb-2 mb-1 mt-3"><h3 class="text-xs font-bold text-slate-800 uppercase tracking-widest">Penempatan & Selenggara</h3></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tarikh Penempatan</p><p class="font-medium text-slate-800">${escapeHTML(extra.placement_date) || '-'}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kod Penempatan</p><p class="font-medium text-slate-800">${escapeHTML(extra.placement_code) || '-'}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tarikh Semakan Akhir</p><p class="font-medium text-slate-800">${formatDate(a.last_inspection_date) || '-'}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Keperluan Selenggara</p><p class="font-medium text-slate-800">${escapeHTML(extra.maintenance_req) || 'TIDAK'}</p></div>
+                            <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Tahun Selenggara</p><p class="font-medium text-slate-800">${escapeHTML(extra.maintenance_year) || '-'}</p></div>
+                        </div>
+
+                        <div>
+                            <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Catatan Bebas / Tambahan</p>
+                            <div class="text-sm text-slate-700 bg-white border border-slate-200 p-4 rounded-xl min-h-[60px] whitespace-pre-wrap">${escapeHTML(extra.real_notes) || '<span class="text-slate-400 italic">Tiada catatan.</span>'}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="sm:w-56 flex-shrink-0 flex flex-col gap-4">
+                        <div class="flex flex-col items-center bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
+                            <canvas id="qrCanvas" class="w-40 h-40 bg-white"></canvas>
+                            <p class="text-[10px] text-slate-500 font-bold mt-4 uppercase tracking-widest text-center leading-relaxed">Imbas Kod Aset<br><span class="text-primary">${escapeHTML(a.registration_no || a.id)}</span></p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 pt-6 border-t border-slate-200">
+                    <h3 class="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4">Sejarah Transaksi & Aduan</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                            <p class="text-xs font-bold text-slate-500 uppercase mb-3">Laporan Kerosakan (${repairs.length})</p>
+                            <ul class="text-xs space-y-2">
+                                ${repairs.length ? repairs.map(r => `<li class="flex justify-between border-b border-slate-200 pb-1"><span class="font-medium text-red-600 truncate mr-2">${escapeHTML(r.damage_type)}</span> <span class="text-slate-500">${formatDate(r.report_date)}</span></li>`).join('') : '<li class="text-slate-400">Tiada rekod.</li>'}
+                            </ul>
+                        </div>
+                        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                            <p class="text-xs font-bold text-slate-500 uppercase mb-3">Sejarah Pergerakan (${moves.length})</p>
+                            <ul class="text-xs space-y-2">
+                                ${moves.length ? moves.map(m => `<li class="flex justify-between border-b border-slate-200 pb-1"><span class="font-medium text-slate-700 truncate mr-2">${escapeHTML(m.new_location)}</span> <span class="text-slate-500">${formatDate(m.out_date)}</span></li>`).join('') : '<li class="text-slate-400">Tiada rekod.</li>'}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                ${isAdmin() ? `<div class="mt-6 pt-4 border-t border-slate-200 flex justify-end"><button onclick="deleteRecord('assets', '${a.id}')" class="px-5 py-2 rounded-lg font-bold text-sm text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">Tandakan Sebagai Lupus / Padam</button></div>` : ''}
+            `;
+        }
+
+        function generateQRCode() {
+            const canvas = document.getElementById('qrCanvas');
+            if (canvas && STATE.modal && STATE.modal.type === 'assetProfile') {
+                const a = STATE.data.assets.find(x => x.id === STATE.modal.id);
+                const qrText = a ? (a.registration_no || a.id) : STATE.modal.id;
+                new QRious({ element: canvas, value: qrText, size: 180, level: 'H' });
+            }
+        }
+
+        function getSelectOptions(collection, selectedValue, valKey = 'name', displayKey = 'name') {
+            return (STATE.data[collection] || []).map(item => `<option value="${escapeHTML(item[valKey])}" ${selectedValue === item[valKey] ? 'selected' : ''}>${escapeHTML(item[displayKey])}</option>`).join('');
+        }
+
+        // FUNGSI BORANG KEMASKINI ASET
+        function modalAssetForm(id) {
+            const a = id ? STATE.data.assets.find(x => x.id === id) : {};
+            const extra = parseNotesData(a.notes);
+            return `
+                <form onsubmit="saveAssetForm(event, '${id || ''}')" class="space-y-6">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                        <div class="sm:col-span-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Keterangan / Nama Aset <span class="text-red-500">*</span></label><input type="text" id="a_name" value="${escapeHTML(a.name)}" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">No. Pendaftaran Rasmi <span class="text-red-500">*</span></label><input type="text" id="a_reg" value="${escapeHTML(a.registration_no)}" required class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Status Penggunaan <span class="text-red-500">*</span></label><select id="a_status" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none">${STATUS_OPTIONS.map(s => `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kategori Klasifikasi</label><select id="a_cat" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Pilih Kategori --</option>${getSelectOptions('categories', a.category)}</select></div>
+                        <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Lokasi Penempatan Semasa</label><select id="a_loc" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="">-- Pilih Lokasi --</option>${getSelectOptions('locations', a.location)}</select></div>
+                    </div>
+                    
+                    <div class="pt-5 border-t border-slate-200">
+                        <h3 class="text-xs font-bold text-slate-800 uppercase tracking-widest mb-4">Maklumat Penempatan & Penyelenggaraan</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                            <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tarikh Penempatan</label><input type="date" id="a_placement_date" value="${escapeHTML(extra.placement_date)}" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                            <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Kod Penempatan</label><input type="text" id="a_placement_code" value="${escapeHTML(extra.placement_code)}" placeholder="Cth: 080311/BGN" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                            <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Keperluan Selenggara</label><select id="a_maintenance_req" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg bg-white outline-none"><option value="TIDAK" ${extra.maintenance_req === 'TIDAK' ? 'selected' : ''}>TIDAK</option><option value="YA" ${extra.maintenance_req === 'YA' ? 'selected' : ''}>YA</option></select></div>
+                            <div><label class="block text-sm font-semibold text-slate-700 mb-1.5">Tahun Selenggara Akhir</label><input type="text" id="a_maintenance_year" value="${escapeHTML(extra.maintenance_year)}" placeholder="Cth: 2024" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none"></div>
+                        </div>
+                    </div>
+
+                    <div class="sm:col-span-2 pt-2"><label class="block text-sm font-semibold text-slate-700 mb-1.5">Catatan Bebas</label><textarea id="a_notes" rows="3" class="w-full px-4 py-2 text-sm border border-slate-300 rounded-lg outline-none">${escapeHTML(extra.real_notes)}</textarea></div>
+                    <div class="pt-4 border-t border-slate-100 flex justify-end gap-3"><button type="submit" id="saveAssetBtn" class="px-6 py-2.5 bg-primary text-white rounded-lg text-sm font-bold shadow-sm transition-colors">Simpan Rekod Aset</button></div>
+                </form>
+            `;
+        }
+
+        async function saveAssetForm(e, id) {
+            e.preventDefault();
+            if(!checkAdminAction()) return;
+            const btn = document.getElementById('saveAssetBtn');
+            btn.innerHTML = `<div class="loader w-4 h-4 border-2 mx-auto"></div>`; btn.disabled = true;
+
+            const extraObj = { placement_date: document.getElementById('a_placement_date').value.trim(), placement_code: document.getElementById('a_placement_code').value.trim(), maintenance_req: document.getElementById('a_maintenance_req').value, maintenance_year: document.getElementById('a_maintenance_year').value.trim(), real_notes: document.getElementById('a_notes').value.trim() };
+
+            const payload = { name: document.getElementById('a_name').value.trim(), registration_no: document.getElementById('a_reg').value.trim(), status: document.getElementById('a_status').value, category: document.getElementById('a_cat').value, location: document.getElementById('a_loc').value, notes: JSON.stringify(extraObj) };
+
+            try {
+                if (id) {
+                    const { data, error } = await supabaseClient.from('assets').update(payload).eq('id', id).select();
+                    if (error) throw error;
+                    if (!data || data.length === 0) throw new Error("Gagal dikemaskini.");
+                    showToast("Maklumat aset berjaya dikemaskini.");
+                } else {
+                    const { error } = await supabaseClient.from('assets').insert([payload]);
+                    if (error) throw error;
+                    showToast("Aset baharu berjaya didaftarkan.");
+                }
+                await fetchAllData();
+                STATE.modal = null; renderApp();
+            } catch (err) { showToast(err.message, "error"); btn.innerHTML = `Simpan Rekod Aset`; btn.disabled = false; }
+        }
+
+        // FUNGSI BORANG TRANSAKSI & DATA INDUK LAIN
+        function getAssetSelectOptions() { return STATE.data.assets.filter(a => !a.is_deleted).map(a => `<option value="${a.id}">${escapeHTML(a.registration_no || a.id)} - ${escapeHTML(a.name).substring(0,40)}...</option>`).join(''); }
+
+        function modalSimpleForm(collection) {
+            let fieldsHtml = '';
+            if (collection === 'categories') fieldsHtml = `<div><label class="block text-sm font-semibold mb-1.5">Nama Kategori <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 border rounded-lg"></div>`;
+            if (collection === 'locations') fieldsHtml = `<div><label class="block text-sm font-semibold mb-1.5">Nama Lokasi <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 border rounded-lg mb-3"></div><div><label class="block text-sm font-semibold mb-1.5">Kod</label><input type="text" id="s_code" class="w-full px-4 py-2 border rounded-lg"></div>`;
+            if (collection === 'personnel') fieldsHtml = `<div><label class="block text-sm font-semibold mb-1.5">Nama Pegawai <span class="text-red-500">*</span></label><input type="text" id="s_name" required class="w-full px-4 py-2 border rounded-lg mb-3"></div><div class="grid grid-cols-2 gap-3"><div><label class="block text-sm font-semibold mb-1.5">Jawatan</label><input type="text" id="s_pos" class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Bahagian</label><input type="text" id="s_dept" class="w-full px-4 py-2 border rounded-lg"></div></div>`;
+            return `<form onsubmit="saveSimpleRecord(event, '${collection}')" class="space-y-4">${fieldsHtml}<div class="pt-4 flex justify-end"><button type="submit" id="saveSimpleBtn" class="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold">Simpan</button></div></form>`;
+        }
+        
+        async function saveSimpleRecord(e, collection) {
+            e.preventDefault(); if(!checkAdminAction()) return;
+            document.getElementById('saveSimpleBtn').disabled = true;
+            let payload = { name: document.getElementById('s_name').value.trim() };
+            if(collection === 'locations') payload.code = document.getElementById('s_code').value.trim();
+            if(collection === 'personnel') { payload.position = document.getElementById('s_pos').value.trim(); payload.department = document.getElementById('s_dept').value.trim(); }
+            try { await supabaseClient.from(collection).insert([payload]); showToast("Berjaya ditambah."); await fetchAllData(); STATE.modal = null; renderApp(); } catch (err) { showToast(err.message, "error"); }
+        }
+
+        function modalMovementForm() { return `<form onsubmit="saveTransaction(event, 'movements')" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Pilih Aset <span class="text-red-500">*</span></label><select id="t_asset_id" required class="w-full px-4 py-2 border rounded-lg"><option value="">-- Sila Pilih --</option>${getAssetSelectOptions()}</select></div><div><label class="block text-sm font-semibold mb-1.5">Lokasi Baru <span class="text-red-500">*</span></label><input type="text" id="t_new_location" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Tarikh Keluar</label><input type="date" id="t_out_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 border rounded-lg"></div><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Tujuan <span class="text-red-500">*</span></label><input type="text" id="t_purpose" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Status</label><select id="t_status" class="w-full px-4 py-2 border rounded-lg"><option value="Dalam Pergerakan">Dalam Pergerakan</option><option value="Dipulangkan">Selesai / Dipulangkan</option></select></div></div><div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold">Rekod Pergerakan</button></div></form>`; }
+        function modalMaintenanceForm() { return `<form onsubmit="saveTransaction(event, 'maintenance')" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Pilih Aset <span class="text-red-500">*</span></label><select id="t_asset_id" required class="w-full px-4 py-2 border rounded-lg"><option value="">-- Sila Pilih --</option>${getAssetSelectOptions()}</select></div><div><label class="block text-sm font-semibold mb-1.5">Jenis Selenggara <span class="text-red-500">*</span></label><input type="text" id="t_type" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Tarikh Mula</label><input type="date" id="t_start_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Kos (RM)</label><input type="number" step="0.01" id="t_cost" class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Status</label><select id="t_status" class="w-full px-4 py-2 border rounded-lg"><option value="Dijadualkan">Dijadualkan</option><option value="Sedang Diselenggara">Sedang Diselenggara</option><option value="Selesai">Selesai</option></select></div></div><div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold">Rekod Selenggara</button></div></form>`; }
+        function modalDamageForm() { return `<form onsubmit="saveTransaction(event, 'damage')" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Pilih Aset <span class="text-red-500">*</span></label><select id="t_asset_id" required class="w-full px-4 py-2 border rounded-lg"><option value="">-- Sila Pilih --</option>${getAssetSelectOptions()}</select></div><div><label class="block text-sm font-semibold mb-1.5">Jenis Kerosakan <span class="text-red-500">*</span></label><input type="text" id="t_damage_type" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Tarikh Dilaporkan</label><input type="date" id="t_report_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 border rounded-lg"></div><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Tahap Keutamaan</label><select id="t_priority" class="w-full px-4 py-2 border rounded-lg"><option value="Sederhana">Sederhana - Boleh Beroperasi</option><option value="Tinggi">Tinggi - Tidak Boleh Beroperasi</option></select></div></div><div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2 bg-red-600 text-white rounded-lg text-sm font-bold">Hantar Aduan</button></div></form>`; }
+        function modalInspectionForm() { return `<form onsubmit="saveTransaction(event, 'inspections')" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Pilih Aset <span class="text-red-500">*</span></label><select id="t_asset_id" required class="w-full px-4 py-2 border rounded-lg"><option value="">-- Sila Pilih --</option>${getAssetSelectOptions()}</select></div><div><label class="block text-sm font-semibold mb-1.5">Keadaan Aset <span class="text-red-500">*</span></label><select id="t_condition" required class="w-full px-4 py-2 border rounded-lg"><option value="BAIK">BAIK (Boleh Digunakan)</option><option value="ROSAK">ROSAK (Perlu Pembaikan)</option><option value="HILANG">HILANG</option></select></div><div><label class="block text-sm font-semibold mb-1.5">Tarikh Semakan</label><input type="date" id="t_inspection_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 border rounded-lg"></div><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Catatan</label><input type="text" id="t_notes" class="w-full px-4 py-2 border rounded-lg"></div></div><div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2 bg-emerald-600 text-white rounded-lg text-sm font-bold">Rekod Semakan</button></div></form>`; }
+        function modalDisposalForm() { return `<form onsubmit="saveTransaction(event, 'disposals')" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Pilih Aset <span class="text-red-500">*</span></label><select id="t_asset_id" required class="w-full px-4 py-2 border rounded-lg"><option value="">-- Sila Pilih --</option>${getAssetSelectOptions()}</select></div><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Sebab Pelupusan <span class="text-red-500">*</span></label><input type="text" id="t_reason" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Kaedah Cadangan</label><select id="t_method" class="w-full px-4 py-2 border rounded-lg"><option value="E-Waste">E-Waste</option><option value="Jualan Sisa">Jualan Sisa</option><option value="Musnah">Musnah / Buang</option></select></div><div><label class="block text-sm font-semibold mb-1.5">Tarikh Cadangan</label><input type="date" id="t_proposal_date" value="${new Date().toISOString().split('T')[0]}" class="w-full px-4 py-2 border rounded-lg"></div></div><div class="pt-4 flex justify-end gap-3"><button type="submit" id="saveTransBtn" class="px-6 py-2 bg-orange-600 text-white rounded-lg text-sm font-bold">Buka Fail Pelupusan</button></div></form>`; }
+
+        async function saveTransaction(e, table) {
+            e.preventDefault(); if(!checkAdminAction()) return;
+            document.getElementById('saveTransBtn').disabled = true;
+            let p = { asset_id: document.getElementById('t_asset_id').value };
+            
+            if(table === 'movements') { p.new_location = document.getElementById('t_new_location').value; p.out_date = document.getElementById('t_out_date').value; p.purpose = document.getElementById('t_purpose').value; p.status = document.getElementById('t_status').value; }
+            else if (table === 'maintenance') { p.type = document.getElementById('t_type').value; p.start_date = document.getElementById('t_start_date').value; p.cost = parseFloat(document.getElementById('t_cost').value)||0; p.status = document.getElementById('t_status').value; }
+            else if (table === 'damage') { p.damage_type = document.getElementById('t_damage_type').value; p.report_date = document.getElementById('t_report_date').value; p.priority = document.getElementById('t_priority').value; p.status = "Dilaporkan"; }
+            else if (table === 'inspections') { p.condition = document.getElementById('t_condition').value; p.inspection_date = document.getElementById('t_inspection_date').value; p.notes = document.getElementById('t_notes').value; p.inspector_name = STATE.profile?.name; p.status = "Selesai Direkod"; }
+            else if (table === 'disposals') { p.reason = document.getElementById('t_reason').value; p.proposal_date = document.getElementById('t_proposal_date').value; p.method = document.getElementById('t_method').value; p.status = "Cadangan"; }
+
+            try {
+                await supabaseClient.from(table).insert([p]);
+                if (table === 'inspections') await supabaseClient.from('assets').update({ last_inspection_date: p.inspection_date }).eq('id', p.asset_id);
+                showToast("Rekod transaksi berjaya disimpan."); await fetchAllData(); STATE.modal = null; renderApp();
+            } catch (err) { showToast(err.message, "error"); document.getElementById('saveTransBtn').disabled = false; }
+        }
+
+        function modalUserForm() { return `<div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6 text-sm text-blue-800"><p class="font-bold mb-1">Pendaftaran Pentadbir/Pengguna</p></div><form onsubmit="saveUserForm(event)" class="space-y-5"><div class="grid grid-cols-1 sm:grid-cols-2 gap-5"><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Nama Penuh <span class="text-red-500">*</span></label><input type="text" id="u_name" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">E-mel <span class="text-red-500">*</span></label><input type="email" id="u_email" required class="w-full px-4 py-2 border rounded-lg"></div><div><label class="block text-sm font-semibold mb-1.5">Peranan</label><select id="u_role" class="w-full px-4 py-2 border rounded-lg"><option value="USER">USER</option><option value="ADMIN">ADMIN</option></select></div><div class="sm:col-span-2"><label class="block text-sm font-semibold mb-1.5">Kata Laluan Permulaan <span class="text-red-500">*</span></label><input type="text" id="u_pass" required minlength="6" class="w-full px-4 py-2 border rounded-lg"></div></div><div class="pt-5 flex justify-end gap-3"><button type="submit" id="saveUserBtn" class="px-6 py-2 bg-primary text-white rounded-lg text-sm font-bold">Daftarkan Pengguna</button></div></form>`; }
+        
+        async function saveUserForm(e) {
+            e.preventDefault(); if(!checkAdminAction()) return;
+            document.getElementById('saveUserBtn').disabled = true;
+            try {
+                const { error } = await supabaseClient.rpc('admin_create_user', { email: document.getElementById('u_email').value.trim().toLowerCase(), password: document.getElementById('u_pass').value.trim(), full_name: document.getElementById('u_name').value.trim(), user_role: document.getElementById('u_role').value });
+                if (error) throw error; showToast("Pengguna baharu berjaya didaftarkan."); await fetchAllData(); STATE.modal = null; renderApp();
+            } catch (err) { showToast(err.message, "error"); document.getElementById('saveUserBtn').disabled = false; }
+        }
+
+        async function deleteRecord(coll, id) {
+            if(!checkAdminAction()) return;
+            const msg = coll === 'assets' ? "AMARAN: Anda pasti ingin menanda aset ini sebagai DILUPUSKAN secara kekal?" : "Pasti ingin memadam rekod ini?";
+            if(!confirm(msg)) return;
+            try {
+                if(coll === 'assets') await supabaseClient.from('assets').update({ is_deleted: true, status: 'DILUPUSKAN' }).eq('id', id);
+                else await supabaseClient.from(coll).delete().eq('id', id);
+                showToast("Tindakan berjaya."); await fetchAllData(); STATE.modal = null; renderApp();
+            } catch (err) { showToast(err.message, "error"); }
+        }
+
+        // Mula sistem apabila halaman dibuka
+        initApp();
+    </script>
