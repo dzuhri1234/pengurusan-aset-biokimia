@@ -161,7 +161,20 @@
         async function fetchAllData() {
             try {
                 const tables = ['assets', 'movements', 'maintenance', 'damage', 'disposals', 'inspections', 'locations', 'categories', 'personnel'];
-                const promises = tables.map(t => supabaseClient.from(t).select('*').order('created_at', { ascending: false }).catch(() => ({data:[]})));
+                
+                const promises = tables.map(async (t) => {
+                    try {
+                        const { data, error } = await supabaseClient.from(t).select('*').order('created_at', { ascending: false });
+                        if (error) {
+                            console.warn(`Ralat muat turun jadual ${t}:`, error.message);
+                            return { data: [] };
+                        }
+                        return { data };
+                    } catch (err) {
+                        return { data: [] };
+                    }
+                });
+                
                 const results = await Promise.all(promises);
 
                 tables.forEach((table, index) => { if (results[index] && results[index].data) STATE.data[table] = results[index].data; });
