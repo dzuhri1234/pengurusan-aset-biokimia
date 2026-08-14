@@ -45,8 +45,8 @@
 
     <script>
         // PENTING: GANTIKAN DENGAN KUNCI SUPABASE ANDA SEBELUM DIJALANKAN
-        const SUPABASE_URL = "https://lohbpqkldrdagkbhbxka.supabase.co"; 
-        const SUPABASE_ANON_KEY = "sb_publishable_o3vJ1G77WzvSkei-hS7dNg_oTJepoIA";
+        const SUPABASE_URL = "MASUKKAN_URL_ANDA_DI_SINI"; 
+        const SUPABASE_ANON_KEY = "MASUKKAN_ANON_KEY_ANDA_DI_SINI";
 
         let supabaseClient;
         let statusChartInstance = null; 
@@ -716,7 +716,7 @@
 
             return `
                 <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm transition-opacity" onclick="if(event.target === this){ STATE.modal=null; renderApp(); }">
-                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden animate-[pulse_0.1s_ease-out]">
+                    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-[pulse_0.1s_ease-out]">
                         <div class="px-6 py-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 shrink-0">
                             <h2 class="text-lg font-bold text-slate-800">${title}</h2>
                             <button onclick="STATE.modal=null; renderApp();" class="text-slate-400 hover:text-slate-700 bg-slate-200/50 hover:bg-slate-200 rounded-full p-1.5 transition-colors"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>
@@ -731,37 +731,121 @@
             const a = STATE.data.assets.find(x => x.id === id);
             if(!a) return '<p>Aset tidak dijumpai.</p>';
             
+            // 1. Ekstrak data migrasi lama dari dalam teks catatan
+            let tarikhPenempatan = '-'; let kodPenempatan = '-'; let perluSelenggara = '-'; let tahunSelenggara = '-';
+            let actualNotes = escapeHTML(a.notes || 'Tiada catatan rekod.');
+            
+            if (a.notes && a.notes.includes('[DATA LAMA]')) {
+                const lines = a.notes.split('\n');
+                lines.forEach(l => {
+                    if(l.includes('Tarikh Penempatan:')) tarikhPenempatan = escapeHTML(l.split(':')[1]?.trim() || '-');
+                    if(l.includes('Kod Penempatan:')) kodPenempatan = escapeHTML(l.split(':')[1]?.trim() || '-');
+                    if(l.includes('Keperluan Selenggara:')) perluSelenggara = escapeHTML(l.split(':')[1]?.trim() || '-');
+                    if(l.includes('Tahun Selenggara:')) tahunSelenggara = escapeHTML(l.split(':')[1]?.trim() || '-');
+                });
+                
+                // Buang blok [DATA LAMA] dan tunjukkan catatan sebenar sahaja
+                const catatanIdx = a.notes.indexOf('Catatan Asal:');
+                if (catatanIdx > -1) actualNotes = escapeHTML(a.notes.substring(catatanIdx + 13).trim());
+                else actualNotes = 'Tiada catatan tambahan.';
+            }
+
+            // 2. Tarik Data Sejarah dari pangkalan data
+            const maint = (STATE.data.maintenance || []).filter(x => x.asset_id === id);
+            const move = (STATE.data.movements || []).filter(x => x.asset_id === id);
+            const insp = (STATE.data.inspections || []).filter(x => x.asset_id === id);
+
             return `
-                <div class="flex flex-col sm:flex-row gap-8">
-                    <div class="flex-1 space-y-5">
-                        <div>
+                <div class="flex flex-col gap-6">
+                    <!-- Top: Info Grid & QR Code -->
+                    <div class="flex flex-col sm:flex-row gap-6">
+                        <div class="flex-1">
                             <h1 class="text-xl font-bold text-slate-900 mb-1">${escapeHTML(a.name)}</h1>
-                            <p class="text-sm font-mono font-bold text-primary bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100">${escapeHTML(a.registration_no || a.id)}</p>
+                            <p class="text-sm font-mono font-bold text-primary bg-blue-50 inline-block px-2 py-0.5 rounded border border-blue-100 mb-4">${escapeHTML(a.registration_no || a.id)}</p>
+                            
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-100">
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Kategori</p><p class="font-medium text-slate-800">${escapeHTML(a.category || '-')}</p></div>
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Lokasi Tepat</p><p class="font-medium text-slate-800">${escapeHTML(a.location || '-')}</p></div>
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Kod Penempatan</p><p class="font-medium text-slate-800">${kodPenempatan}</p></div>
+                                
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Status Terkini</p><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)}">${escapeHTML(a.status)}</span></div>
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Tarikh Penempatan</p><p class="font-medium text-slate-800">${tarikhPenempatan}</p></div>
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Tarikh Semakan Akhir</p><p class="font-medium text-slate-800">${formatDate(a.last_inspection_date) || '-'}</p></div>
+                                
+                                <div><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Perlu Selenggara?</p><p class="font-medium text-slate-800">${perluSelenggara}</p></div>
+                                <div class="col-span-2"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Tahun Selenggara Terakhir</p><p class="font-medium text-slate-800">${tahunSelenggara}</p></div>
+                            </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl border border-slate-100">
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Kategori</p><p class="font-medium text-slate-800">${escapeHTML(a.category || '-')}</p></div>
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Lokasi Tepat</p><p class="font-medium text-slate-800">${escapeHTML(a.location || '-')}</p></div>
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Status Terkini</p><span class="inline-block px-2 py-0.5 text-[10px] font-bold rounded-full border ${getBadgeColor(a.status)}">${escapeHTML(a.status)}</span></div>
-                            <div><p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Tarikh Semakan Akhir</p><p class="font-medium text-slate-800">${formatDate(a.last_inspection_date) || '-'}</p></div>
-                        </div>
-                        <div>
-                            <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Catatan Tambahan</p>
-                            <p class="text-sm text-slate-700 bg-white border border-slate-200 p-3 rounded-lg min-h-[60px] whitespace-pre-wrap">${escapeHTML(a.notes || 'Tiada catatan rekod.')}</p>
+                        
+                        <div class="sm:w-48 flex-shrink-0 flex flex-col items-center bg-white p-4 rounded-xl border border-slate-200 shadow-sm h-fit">
+                            <canvas id="qrCanvas" class="w-32 h-32 bg-white"></canvas>
+                            <p class="text-[10px] text-slate-500 font-bold mt-2 uppercase tracking-widest text-center">No. Siri Pendaftaran</p>
                         </div>
                     </div>
-                    <div class="sm:w-56 flex-shrink-0 flex flex-col items-center bg-white p-5 rounded-2xl border border-slate-200 shadow-sm h-fit">
-                        <canvas id="qrCanvas" class="w-40 h-40 bg-white"></canvas>
-                        <p class="text-xs text-slate-500 font-bold mt-3 uppercase tracking-widest text-center">Imbas Kod Aset<br>(Sedia untuk dicetak)</p>
+                    
+                    <!-- Middle: Catatan -->
+                    <div>
+                        <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Catatan Tambahan</p>
+                        <p class="text-sm text-slate-700 bg-white border border-slate-200 p-3 rounded-lg min-h-[50px] whitespace-pre-wrap">${actualNotes}</p>
+                    </div>
+
+                    <!-- Bottom: Sejarah Kitaran Hayat (History) -->
+                    <div class="border-t border-slate-200 pt-5 mt-2 space-y-4">
+                        <h3 class="font-bold text-slate-800 flex items-center gap-2"><svg class="w-5 h-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Sejarah Rekod Transaksi</h3>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <!-- Sejarah Pemeriksaan -->
+                            <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                <div class="bg-slate-50 px-3 py-2 border-b border-slate-200 font-bold text-[11px] text-slate-700 uppercase tracking-wider">Pemeriksaan Berkala (${insp.length})</div>
+                                <ul class="divide-y divide-slate-100 max-h-48 overflow-y-auto custom-scrollbar text-xs">
+                                    ${insp.length ? insp.map(i => `
+                                        <li class="p-3 hover:bg-slate-50">
+                                            <p class="font-semibold text-slate-800 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full ${i.condition==='BAIK'?'bg-emerald-500':'bg-red-500'}"></span> ${escapeHTML(i.condition)}</p>
+                                            <p class="text-slate-500 mt-1">${formatDate(i.inspection_date)} • Pemeriksa: ${escapeHTML(i.inspector_name)}</p>
+                                        </li>`).join('') : '<li class="p-4 text-slate-400 text-center">Tiada rekod pemeriksaan.</li>'}
+                                </ul>
+                            </div>
+
+                            <!-- Sejarah Pergerakan -->
+                            <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                <div class="bg-slate-50 px-3 py-2 border-b border-slate-200 font-bold text-[11px] text-slate-700 uppercase tracking-wider">Pergerakan & Pinjaman (${move.length})</div>
+                                <ul class="divide-y divide-slate-100 max-h-48 overflow-y-auto custom-scrollbar text-xs">
+                                    ${move.length ? move.map(m => `
+                                        <li class="p-3 hover:bg-slate-50">
+                                            <p class="font-semibold text-slate-800">Ke: ${escapeHTML(m.new_location)}</p>
+                                            <p class="text-slate-500 mt-1">${formatDate(m.out_date)} • ${escapeHTML(m.purpose)}</p>
+                                            <p class="mt-1"><span class="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100 text-[9px] font-bold uppercase">${escapeHTML(m.status)}</span></p>
+                                        </li>`).join('') : '<li class="p-4 text-slate-400 text-center">Tiada rekod pergerakan.</li>'}
+                                </ul>
+                            </div>
+                            
+                            <!-- Sejarah Penyelenggaraan -->
+                            <div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
+                                <div class="bg-slate-50 px-3 py-2 border-b border-slate-200 font-bold text-[11px] text-slate-700 uppercase tracking-wider">Penyelenggaraan (${maint.length})</div>
+                                <ul class="divide-y divide-slate-100 max-h-48 overflow-y-auto custom-scrollbar text-xs">
+                                    ${maint.length ? maint.map(m => `
+                                        <li class="p-3 hover:bg-slate-50">
+                                            <p class="font-semibold text-slate-800">${escapeHTML(m.type)}</p>
+                                            <p class="text-slate-500 mt-1">${formatDate(m.start_date)} • Kos: RM${parseFloat(m.cost||0).toFixed(2)}</p>
+                                            <p class="mt-1"><span class="px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100 text-[9px] font-bold uppercase">${escapeHTML(m.status)}</span></p>
+                                        </li>`).join('') : '<li class="p-4 text-slate-400 text-center">Tiada rekod penyelenggaraan.</li>'}
+                                </ul>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                ${isAdmin() ? `<div class="mt-8 pt-4 border-t border-slate-200 flex justify-end gap-3"><button onclick="deleteRecord('assets', '${a.id}')" class="px-5 py-2 rounded-lg font-bold text-sm text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">Tandakan Sebagai Lupus / Padam</button></div>` : ''}
+                ${isAdmin() ? `<div class="mt-6 pt-4 border-t border-slate-200 flex justify-end gap-3"><button onclick="deleteRecord('assets', '${a.id}')" class="px-5 py-2 rounded-lg font-bold text-sm text-red-600 bg-red-50 border border-red-200 hover:bg-red-100 transition-colors">Tandakan Sebagai Lupus / Padam</button></div>` : ''}
             `;
         }
 
         function generateQRCode() {
             const canvas = document.getElementById('qrCanvas');
             if (canvas && STATE.modal && STATE.modal.type === 'assetProfile') {
-                new QRious({ element: canvas, value: `https://aset.vri.gov.my/asset/${STATE.modal.id}`, size: 180, level: 'H' });
+                const a = STATE.data.assets.find(x => x.id === STATE.modal.id);
+                // Menukar QR Code daripada URL tapak web kepada paparan Teks (Nombor Pendaftaran)
+                // Ini membolehkan anda scan guna kamera bimbit/scanner dan terus copy Nombor Siri
+                const qrText = a ? (a.registration_no || a.id) : STATE.modal.id;
+                new QRious({ element: canvas, value: qrText, size: 180, level: 'H' });
             }
         }
 
